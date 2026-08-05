@@ -1,0 +1,46 @@
+import Foundation
+
+enum AppError: Error, Codable, Equatable, LocalizedError, Sendable {
+    case authorizationRequired
+    case subscriptionRequired
+    case cloudLibraryUnavailable
+    case networkUnavailable
+    case musicKit(message: String)
+    case unsupportedAction(action: String)
+    case invalidInput(message: String)
+    case unknown(message: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .authorizationRequired:
+            return "Apple Music authorization is required."
+        case .subscriptionRequired:
+            return "An active Apple Music subscription is required."
+        case .cloudLibraryUnavailable:
+            return "Apple Music Cloud Library is unavailable."
+        case .networkUnavailable:
+            return "Apple Music could not be reached."
+        case .musicKit(let message), .invalidInput(let message), .unknown(let message):
+            return message
+        case .unsupportedAction(let action):
+            return "Apple Music does not support \(action) from this app."
+        }
+    }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .authorizationRequired:
+            return "Open Settings and allow OpenChord to access Apple Music, then try again."
+        case .subscriptionRequired:
+            return "Sign in to an active Apple Music subscription and retry."
+        case .cloudLibraryUnavailable:
+            return "Enable Sync Library in the Music app, then retry."
+        case .networkUnavailable:
+            return "Check the network connection and retry."
+        case .unsupportedAction:
+            return "Open the item in the Music app to perform this action."
+        case .musicKit, .invalidInput, .unknown:
+            return "Retry the operation. If it continues, copy diagnostics from Settings."
+        }
+    }
+}

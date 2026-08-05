@@ -22,11 +22,10 @@ final class AppModel: ObservableObject {
     @Published var libraryBrowseDownloadedOnly = false
 
     private nonisolated(unsafe) let player = ApplicationMusicPlayer.shared
-    private let defaults = UserDefaults.standard
-    private let settingsKey = "OpenChord.persistedState"
+    private let settingsStore = SettingsStore()
 
     init() {
-        let persisted = Self.loadPersistedState(from: UserDefaults.standard, key: "OpenChord.persistedState")
+        let persisted = Self.loadPersistedState(from: settingsStore.readLegacyPayload())
         self.homeSections = persisted?.homeSections ?? HomeSectionKind.defaultOrder
         self.theme = persisted?.theme ?? .midnight
         self.queueShuffleEnabled = persisted?.queueShuffleEnabled ?? false
@@ -362,14 +361,14 @@ final class AppModel: ObservableObject {
 
         do {
             let data = try JSONEncoder().encode(state)
-            defaults.set(data, forKey: settingsKey)
+            settingsStore.writeLegacyPayload(data)
         } catch {
             lastErrorMessage = error.localizedDescription
         }
     }
 
-    private static func loadPersistedState(from defaults: UserDefaults, key: String) -> PersistedState? {
-        guard let data = defaults.data(forKey: key) else { return nil }
+    private static func loadPersistedState(from data: Data?) -> PersistedState? {
+        guard let data else { return nil }
         return try? JSONDecoder().decode(PersistedState.self, from: data)
     }
 }

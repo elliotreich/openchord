@@ -17,6 +17,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "OpenChord"
+        ),
+        .testTarget(
+            name: "OpenChordTests",
+            dependencies: ["OpenChord"]
         )
     ]
 )
