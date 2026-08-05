@@ -66,6 +66,8 @@ final class MockLibraryService: LibraryService {
 final class MockPlaybackService: PlaybackService {
     private(set) var state = PlaybackState()
 
+    func refresh() async {}
+
     func play(_ item: MediaItemRef) async throws {
         state.currentItem = item
         state.status = .playing
@@ -96,4 +98,12 @@ final class MockPlaybackService: PlaybackService {
     }
 
     func skipPrevious() async throws {}
+
+    func setShuffle(enabled: Bool) async {
+        state.shuffleEnabled = enabled
+    }
+
+    func setRepeatMode(_ mode: RepeatMode) async {
+        state.repeatMode = mode
+    }
 }

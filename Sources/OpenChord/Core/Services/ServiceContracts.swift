@@ -29,12 +29,15 @@ protocol LibraryService {
 @MainActor
 protocol PlaybackService {
     var state: PlaybackState { get }
+    func refresh() async
     func play(_ item: MediaItemRef) async throws
     func playNext(_ item: MediaItemRef) async throws
     func addToQueue(_ item: MediaItemRef) async throws
     func togglePlayback() async throws
     func skipNext() async throws
     func skipPrevious() async throws
+    func setShuffle(enabled: Bool) async
+    func setRepeatMode(_ mode: RepeatMode) async
 }
 
 @MainActor
@@ -62,6 +65,15 @@ final class AppEnvironment {
             catalog: MockCatalogService(),
             library: MockLibraryService(),
             playback: MockPlaybackService()
+        )
+    }
+
+    static func live() -> AppEnvironment {
+        AppEnvironment(
+            authorization: MusicKitAuthorizationService(),
+            catalog: MusicKitCatalogService(),
+            library: MusicKitLibraryService(),
+            playback: MusicKitPlaybackService()
         )
     }
 }

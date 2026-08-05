@@ -21,11 +21,11 @@ final class AppModel: ObservableObject {
     @Published var libraryBrowse = LibraryBrowseSnapshot()
     @Published var libraryBrowseDownloadedOnly = false
 
-    private nonisolated(unsafe) let player = ApplicationMusicPlayer.shared
-    private let authorizationService = MusicKitAuthorizationService()
+    private let environment: AppEnvironment
     private let settingsStore = SettingsStore()
 
-    init() {
+    init(environment: AppEnvironment = .live()) {
+        self.environment = environment
         let persisted = Self.loadPersistedState(from: settingsStore.readLegacyPayload())
         self.homeSections = persisted?.homeSections ?? HomeSectionKind.defaultOrder
         self.theme = persisted?.theme ?? .midnight
@@ -42,35 +42,48 @@ final class AppModel: ObservableObject {
     }
 
     func refreshAuthorization() async {
-        await authorizationService.refresh()
+        await environment.authorization.refresh()
         authorizationStatus = MusicAuthorization.currentStatus
         guard authorizationStatus == .notDetermined else { return }
-        await authorizationService.requestAuthorization()
+        await environment.authorization.requestAuthorization()
         authorizationStatus = MusicAuthorization.currentStatus
     }
 
     func requestAuthorization() async {
-        await authorizationService.requestAuthorization()
+        await environment.authorization.requestAuthorization()
         authorizationStatus = MusicAuthorization.currentStatus
     }
 
     func refreshPlaybackSnapshot() async {
-        let entries = player.queue.entries.map { entry in
-            QueueEntrySnapshot(
-                id: entry.id,
-                title: entry.title,
-                subtitle: entry.subtitle ?? "",
-                artworkURL: entry.artwork?.url(width: 240, height: 240)
-            )
-        }
-
+        await environment.playback.refresh()
+        let state = environment.playback.state
+        queueShuffleEnabled = state.shuffleEnabled
+        queueRepeatMode = Self.musicKitRepeatMode(for: state.repeatMode)
         queueSnapshot = QueueSnapshot(
-            statusText: String(describing: player.state.playbackStatus).capitalized,
-            currentTitle: player.queue.currentEntry?.title ?? "Nothing playing",
-            currentArtist: player.queue.currentEntry?.subtitle ?? "Connect Apple Music",
-            currentArtworkURL: player.queue.currentEntry?.artwork?.url(width: 160, height: 160),
-            entries: entries
+            statusText: state.status.rawValue.capitalized,
+            currentTitle: state.currentItem?.title ?? "Nothing playing",
+            currentArtist: state.currentItem?.subtitle.isEmpty == false ? state.currentItem?.subtitle ?? "" : "Connect Apple Music",
+            currentArtworkURL: state.currentItem?.artworkURL,
+            entries: state.queue.map { item in
+                QueueEntrySnapshot(
+                    id: item.id,
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    artworkURL: item.artworkURL
+                )
+            }
         )
+    }
+
+    private static func musicKitRepeatMode(for mode: RepeatMode) -> MusicPlayer.RepeatMode {
+        switch mode {
+        case .off:
+            .none
+        case .one:
+            .one
+        case .all:
+            .all
+        }
     }
 
     func performCatalogSearch() async {
@@ -124,23 +137,14 @@ final class AppModel: ObservableObject {
     }
 
     func play(_ hit: SearchHit) async {
-        do {
-            switch hit {
-            case .song(let song, _):
-                player.queue = [song]
-            case .album(let album, _):
-                player.queue = [album]
-            case .playlist(let playlist, _):
-                player.queue = [playlist]
-            case .artist:
-                searchText = hit.title
-                await performCatalogSearch()
-                return
-            }
+        guard let item = hit.mediaItemReference else {
+            searchText = hit.title
+            await performCatalogSearch()
+            return
+        }
 
-            try await player.play()
-            queueShuffleEnabled = (player.state.shuffleMode ?? .off) == .songs
-            queueRepeatMode = player.state.repeatMode ?? .none
+        do {
+            try await environment.playback.play(item)
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -155,22 +159,21 @@ final class AppModel: ObservableObject {
         await queue(hit, position: .tail)
     }
 
-    func play(_ track: Track) async {
+    func play(_ track: Track, source: MediaSource = .catalog) async {
         do {
-            player.queue = [track]
-            try await player.play()
+            try await environment.playback.play(track.mediaItemReference(source: source))
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
         }
     }
 
-    func playNext(_ track: Track) async {
-        await queue(track, position: .afterCurrentEntry)
+    func playNext(_ track: Track, source: MediaSource = .catalog) async {
+        await queue(track, source: source, position: .afterCurrentEntry)
     }
 
-    func addToQueue(_ track: Track) async {
-        await queue(track, position: .tail)
+    func addToQueue(_ track: Track, source: MediaSource = .catalog) async {
+        await queue(track, source: source, position: .tail)
     }
 
     func clearRecentSearches() {
@@ -186,11 +189,7 @@ final class AppModel: ObservableObject {
 
     func playPause() async {
         do {
-            if player.state.playbackStatus == .playing {
-                player.pause()
-            } else {
-                try await player.play()
-            }
+            try await environment.playback.togglePlayback()
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -199,7 +198,7 @@ final class AppModel: ObservableObject {
 
     func skipNext() async {
         do {
-            try await player.skipToNextEntry()
+            try await environment.playback.skipNext()
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -208,7 +207,7 @@ final class AppModel: ObservableObject {
 
     func skipPrevious() async {
         do {
-            try await player.skipToPreviousEntry()
+            try await environment.playback.skipPrevious()
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -216,20 +215,32 @@ final class AppModel: ObservableObject {
     }
 
     func toggleShuffle() async {
-        player.state.shuffleMode = queueShuffleEnabled ? .off : .songs
-        queueShuffleEnabled.toggle()
+        await environment.playback.setShuffle(enabled: !queueShuffleEnabled)
         await refreshPlaybackSnapshot()
     }
 
     func cycleRepeatMode() async {
-        queueRepeatMode = switch queueRepeatMode {
+        let nextMode: MusicPlayer.RepeatMode = switch queueRepeatMode {
         case .none: .all
         case .all: .one
         case .one: .none
         @unknown default: .none
         }
-        player.state.repeatMode = queueRepeatMode
+        await environment.playback.setRepeatMode(Self.coreRepeatMode(for: nextMode))
         await refreshPlaybackSnapshot()
+    }
+
+    private static func coreRepeatMode(for mode: MusicPlayer.RepeatMode) -> RepeatMode {
+        switch mode {
+        case .none:
+            .off
+        case .one:
+            .one
+        case .all:
+            .all
+        @unknown default:
+            .off
+        }
     }
 
     func toggleHomeSection(_ section: HomeSectionKind) {
@@ -254,8 +265,11 @@ final class AppModel: ObservableObject {
     func updateQueueDefaults(shuffle: Bool, repeatMode: MusicPlayer.RepeatMode) {
         queueShuffleEnabled = shuffle
         queueRepeatMode = repeatMode
-        player.state.shuffleMode = shuffle ? .songs : .off
-        player.state.repeatMode = repeatMode
+        Task {
+            await environment.playback.setShuffle(enabled: shuffle)
+            await environment.playback.setRepeatMode(Self.coreRepeatMode(for: repeatMode))
+            await refreshPlaybackSnapshot()
+        }
         persistSettings()
     }
 
@@ -301,17 +315,19 @@ final class AppModel: ObservableObject {
     }
 
     private func queue(_ hit: SearchHit, position: MusicPlayer.Queue.EntryInsertionPosition) async {
+        guard let item = hit.mediaItemReference else {
+            searchText = hit.title
+            await performCatalogSearch()
+            return
+        }
+
         do {
-            switch hit {
-            case .song(let song, _):
-                try await player.queue.insert([song], position: position)
-            case .album(let album, _):
-                try await player.queue.insert([album], position: position)
-            case .playlist(let playlist, _):
-                try await player.queue.insert([playlist], position: position)
-            case .artist:
-                searchText = hit.title
-                await performCatalogSearch()
+            switch position {
+            case .afterCurrentEntry:
+                try await environment.playback.playNext(item)
+            case .tail:
+                try await environment.playback.addToQueue(item)
+            @unknown default:
                 return
             }
             await refreshPlaybackSnapshot()
@@ -320,9 +336,16 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func queue(_ track: Track, position: MusicPlayer.Queue.EntryInsertionPosition) async {
+    private func queue(_ track: Track, source: MediaSource, position: MusicPlayer.Queue.EntryInsertionPosition) async {
         do {
-            try await player.queue.insert(track, position: position)
+            switch position {
+            case .afterCurrentEntry:
+                try await environment.playback.playNext(track.mediaItemReference(source: source))
+            case .tail:
+                try await environment.playback.addToQueue(track.mediaItemReference(source: source))
+            @unknown default:
+                return
+            }
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -491,6 +514,17 @@ enum SearchSource: String, Codable, Hashable {
     }
 }
 
+extension SearchSource {
+    var mediaSource: MediaSource {
+        switch self {
+        case .catalog:
+            .catalog
+        case .library:
+            .library
+        }
+    }
+}
+
 enum SearchHit: Hashable, Identifiable {
     case song(Song, source: SearchSource)
     case album(Album, source: SearchSource)
@@ -585,6 +619,74 @@ enum SearchHit: Hashable, Identifiable {
     var isPlayable: Bool {
         if case .artist = self { return false }
         return true
+    }
+
+    var mediaItemReference: MediaItemRef? {
+        switch self {
+        case .song(let song, let source):
+            return MediaItemRef(
+                id: String(describing: song.id),
+                kind: .song,
+                title: song.title,
+                subtitle: subtitle,
+                artworkURL: artworkURL,
+                source: source.mediaSource
+            )
+        case .album(let album, let source):
+            return MediaItemRef(
+                id: String(describing: album.id),
+                kind: .album,
+                title: album.title,
+                subtitle: album.artistName,
+                artworkURL: artworkURL,
+                source: source.mediaSource
+            )
+        case .playlist(let playlist, let source):
+            return MediaItemRef(
+                id: String(describing: playlist.id),
+                kind: .playlist,
+                title: playlist.name,
+                subtitle: subtitle,
+                artworkURL: artworkURL,
+                source: source.mediaSource
+            )
+        case .artist:
+            return nil
+        }
+    }
+}
+
+private extension Track {
+    func mediaItemReference(source: MediaSource) -> MediaItemRef {
+        switch self {
+        case .song(let song):
+            return MediaItemRef(
+                id: String(describing: song.id),
+                kind: .song,
+                title: song.title,
+                subtitle: song.artistName,
+                artworkURL: song.artwork?.url(width: 480, height: 480),
+                source: source
+            )
+        case .musicVideo(let musicVideo):
+            return MediaItemRef(
+                id: String(describing: musicVideo.id),
+                kind: .musicVideo,
+                title: musicVideo.title,
+                subtitle: musicVideo.artistName,
+                artworkURL: musicVideo.artwork?.url(width: 480, height: 480),
+                source: source
+            )
+        @unknown default:
+            return MediaItemRef(
+                id: String(describing: id),
+                kind: .song,
+                title: title,
+                subtitle: artistName,
+                artworkURL: artwork?.url(width: 480, height: 480),
+                source: source
+            )
+        }
     }
 }
 

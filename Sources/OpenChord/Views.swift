@@ -488,14 +488,14 @@ struct LibraryDetailView: View {
     @ViewBuilder
     var body: some View {
         switch item {
-        case .song(let song, _):
-            SongDetailView(song: song)
-        case .album(let album, _):
-            AlbumDetailView(album: album)
-        case .playlist(let playlist, _):
-            PlaylistDetailView(playlist: playlist)
-        case .artist(let artist, _):
-            ArtistDetailView(artist: artist)
+        case .song(let song, let source):
+            SongDetailView(song: song, source: source.mediaSource)
+        case .album(let album, let source):
+            AlbumDetailView(album: album, source: source.mediaSource)
+        case .playlist(let playlist, let source):
+            PlaylistDetailView(playlist: playlist, source: source.mediaSource)
+        case .artist(let artist, let source):
+            ArtistDetailView(artist: artist, source: source.mediaSource)
         }
     }
 }
@@ -504,6 +504,7 @@ struct AlbumDetailView: View {
     @EnvironmentObject private var model: AppModel
 
     let album: Album
+    let source: MediaSource
     @State private var tracks: [Track] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -543,7 +544,7 @@ struct AlbumDetailView: View {
                 description: Text("Apple Music did not return tracks for this album.")
             )
         } else {
-            TrackActionList(tracks: tracks)
+            TrackActionList(tracks: tracks, source: source)
         }
     }
 
@@ -565,6 +566,7 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var model: AppModel
 
     let playlist: Playlist
+    let source: MediaSource
     @State private var tracks: [Track] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -604,7 +606,7 @@ struct PlaylistDetailView: View {
                 description: Text("Apple Music did not return tracks for this playlist.")
             )
         } else {
-            TrackActionList(tracks: tracks)
+            TrackActionList(tracks: tracks, source: source)
         }
     }
 
@@ -624,6 +626,7 @@ struct PlaylistDetailView: View {
 
 struct ArtistDetailView: View {
     let artist: Artist
+    let source: MediaSource
     @State private var albums: [Album] = []
     @State private var topSongs: [Song] = []
     @State private var isLoading = false
@@ -671,7 +674,7 @@ struct ArtistDetailView: View {
                         Text("Top Songs")
                             .font(.title3.bold())
                             .padding(.top, 4)
-                        TrackActionList(tracks: topSongs.map(Track.song))
+                        TrackActionList(tracks: topSongs.map(Track.song), source: source)
                     }
 
                     if albums.isEmpty && topSongs.isEmpty {
@@ -706,9 +709,10 @@ struct ArtistDetailView: View {
 
 struct SongDetailView: View {
     let song: Song
+    let source: MediaSource
 
     var body: some View {
-        TrackActionList(tracks: [.song(song)])
+        TrackActionList(tracks: [.song(song)], source: source)
             .padding(24)
             .navigationTitle(song.title)
     }
@@ -716,11 +720,12 @@ struct SongDetailView: View {
 
 struct TrackActionList: View {
     let tracks: [Track]
+    let source: MediaSource
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                TrackActionRow(index: index + 1, track: track)
+                TrackActionRow(index: index + 1, track: track, source: source)
             }
         }
     }
@@ -731,6 +736,7 @@ struct TrackActionRow: View {
 
     let index: Int
     let track: Track
+    let source: MediaSource
 
     var body: some View {
         HStack(spacing: 12) {
@@ -751,13 +757,13 @@ struct TrackActionRow: View {
             Spacer()
             Menu {
                 Button("Play Now", systemImage: "play.fill") {
-                    Task { await model.play(track) }
+                    Task { await model.play(track, source: source) }
                 }
                 Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                    Task { await model.playNext(track) }
+                    Task { await model.playNext(track, source: source) }
                 }
                 Button("Add to Queue", systemImage: "text.badge.plus") {
-                    Task { await model.addToQueue(track) }
+                    Task { await model.addToQueue(track, source: source) }
                 }
             } label: {
                 Label("Track actions", systemImage: "ellipsis.circle")

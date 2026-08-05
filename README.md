@@ -51,12 +51,18 @@ open dist/OpenChord.app
 ```
 Sources/OpenChord/
   OpenChordApp.swift   — App entry point, window + settings scenes
-  AppModel.swift       — Current application state and MusicKit integration
+  AppModel.swift       — Application state and v2 environment integration
   Views.swift          — Root view, section views, search, library, queue, settings
   RootView.swift       — Main window layout with sidebar navigation
+  Core/
+    Models/             — Stable media, playback, home, and search value types
+    Services/           — MusicKit implementations plus preview/mock services
+    Persistence/        — Backward-compatible settings boundary
+    Support/            — Typed errors and feature flags
+Tests/OpenChordTests/   — Pure model, persistence, and preview-service tests
 ```
 
-The v2 architecture is being migrated incrementally toward injected MusicKit services, mockable previews/tests, typed errors, and versioned local persistence. The existing settings format remains backward-compatible during that migration.
+The v2 architecture is being migrated incrementally toward injected MusicKit services, mockable previews/tests, typed errors, and versioned local persistence. Authorization and playback now run through the environment boundary; catalog and library UI migration remains incremental. The existing settings format remains backward-compatible during that migration.
 
 ## Design Philosophy
 
