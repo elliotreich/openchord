@@ -22,6 +22,8 @@ OpenChord is a clean-room macOS Apple Music companion built with SwiftUI and Mus
 
 OpenChord does not ship with a personal Apple Music token or API key. Each user authorizes the app through MusicKit on their own device. Developers building from source must configure MusicKit for their own Apple Developer team; no credentials belong in this repository.
 
+For a signed build, register the bundle identifier with your own team and enable the MusicKit App Service for that App ID in Apple Developer. The package includes the required `NSAppleMusicUsageDescription`; it does not include a developer token, user token, private key, or entitlement tied to Elliot’s account.
+
 ## Build & Run
 
 ```bash
