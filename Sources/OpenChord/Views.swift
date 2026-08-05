@@ -376,13 +376,18 @@ struct SearchView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                searchHeader
-                resultSections(for: model.catalogResults, title: "Apple Music", sourceTint: .pink)
-                resultSections(for: model.libraryResults, title: "Library", sourceTint: .blue)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    searchHeader
+                    resultSections(for: model.catalogResults, title: "Apple Music", sourceTint: .pink)
+                    resultSections(for: model.libraryResults, title: "Library", sourceTint: .blue)
+                }
+                .padding(24)
             }
-            .padding(24)
+            .navigationDestination(for: MediaItemRef.self) { item in
+                LibraryDetailView(item: item)
+            }
         }
     }
 
@@ -980,6 +985,7 @@ struct PlayerBarView: View {
                     Image(systemName: "backward.fill")
                 }
                 .help("Previous track")
+                .keyboardShortcut(.leftArrow, modifiers: [.command])
 
                 Button {
                     Task { await model.playPause() }
@@ -988,6 +994,7 @@ struct PlayerBarView: View {
                         .font(.headline)
                 }
                 .help(isPlaying ? "Pause" : "Play")
+                .keyboardShortcut(.space, modifiers: [])
 
                 Button {
                     Task { await model.skipNext() }
@@ -995,6 +1002,7 @@ struct PlayerBarView: View {
                     Image(systemName: "forward.fill")
                 }
                 .help("Next track")
+                .keyboardShortcut(.rightArrow, modifiers: [.command])
             }
             .buttonStyle(.borderless)
         }
@@ -1023,7 +1031,7 @@ struct QueueView: View {
 
     private var nowPlayingCard: some View {
         HStack(alignment: .top, spacing: 16) {
-            ArtworkThumbnail(url: model.queueSnapshot.entries.first?.artworkURL, size: 120)
+            ArtworkThumbnail(url: model.queueSnapshot.currentArtworkURL, size: 120)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Now Playing")
                     .font(.headline)
@@ -1432,64 +1440,84 @@ struct SearchResultCard: View {
     let tint: Color
 
     var body: some View {
-        Button {
-            Task { await model.play(item) }
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                ZStack(alignment: .bottomLeading) {
-                    ArtworkThumbnail(url: item.artworkURL, size: 220)
-                    LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 96)
-                        .clipped()
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.playableDescription.uppercased())
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.8))
-                        Text(item.source.label)
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                    .padding(12)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                    Text(item.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    Text(item.source.label)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(tint.opacity(0.28), lineWidth: 1)
-            )
-            .contextMenu {
-                Button("Play Now") {
+        Group {
+            if item.kind == .song {
+                Button {
                     Task { await model.play(item) }
+                } label: {
+                    cardContent
                 }
-                if item.isPlayable {
-                    Button("Play Next") {
-                        Task { await model.playNext(item) }
-                    }
-                    Button("Add to Queue") {
-                        Task { await model.addToQueue(item) }
-                    }
+                .buttonStyle(.plain)
+            } else if item.kind == .album || item.kind == .playlist || item.kind == .artist {
+                NavigationLink(value: item) {
+                    cardContent
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    Task { await model.play(item) }
+                } label: {
+                    cardContent
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ZStack(alignment: .bottomLeading) {
+                ArtworkThumbnail(url: item.artworkURL, size: 220, symbolName: item.symbolName)
+                LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 96)
+                    .clipped()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.playableDescription.uppercased())
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                    Text(item.source.label)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(12)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(item.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Text(item.source.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(tint.opacity(0.28), lineWidth: 1)
+        )
+        .contextMenu {
+            Button("Play Now") {
+                Task { await model.play(item) }
+            }
+            if item.isPlayable {
+                Button("Play Next") {
+                    Task { await model.playNext(item) }
+                }
+                Button("Add to Queue") {
+                    Task { await model.addToQueue(item) }
                 }
             }
         }
-        .buttonStyle(.plain)
     }
 }
 

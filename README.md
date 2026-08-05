@@ -44,6 +44,16 @@ open dist/OpenChord.app
 
 The local package is ad-hoc signed for smoke testing. It is not a notarized release; sign it with your own team before distributing it to other users.
 
+To package for your own registered App ID, set the bundle identifier and signing identity without placing credentials in the repository:
+
+```bash
+OPENCHORD_BUNDLE_IDENTIFIER=com.example.OpenChord \
+OPENCHORD_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
+bash package-app.sh
+```
+
+The ad-hoc default is useful for local UI smoke tests, but Apple Music catalog relationships and some MusicKit requests require the signed App ID to be registered by the builder's team.
+
 ## Tech Stack
 
 - **Language**: Swift 6

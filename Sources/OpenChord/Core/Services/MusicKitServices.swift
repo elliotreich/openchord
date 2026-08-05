@@ -217,13 +217,18 @@ final class MusicKitLibraryService: LibraryService {
     }
 
     func items(kind: MediaKind, limit: Int, downloadedOnly: Bool) async throws -> [MediaItemRef] {
+        guard limit > 0 else { return [] }
+        let fetchLimit = max(limit * 5, 100)
+
         switch kind {
         case .song:
             var request = MusicLibraryRequest<Song>()
-            request.limit = limit
+            request.limit = fetchLimit
             request.includeOnlyDownloadedContent = downloadedOnly
-            request.sort(by: \.libraryAddedDate, ascending: false)
-            return try await request.response().items.map { song in
+            let songs = try await request.response().items.sorted {
+                ($0.libraryAddedDate ?? .distantPast) > ($1.libraryAddedDate ?? .distantPast)
+            }
+            return songs.prefix(limit).map { song in
                 MediaItemRef(
                     id: String(describing: song.id),
                     kind: .song,
@@ -235,10 +240,12 @@ final class MusicKitLibraryService: LibraryService {
             }
         case .album:
             var request = MusicLibraryRequest<Album>()
-            request.limit = limit
+            request.limit = fetchLimit
             request.includeOnlyDownloadedContent = downloadedOnly
-            request.sort(by: \.libraryAddedDate, ascending: false)
-            return try await request.response().items.map { album in
+            let albums = try await request.response().items.sorted {
+                ($0.libraryAddedDate ?? .distantPast) > ($1.libraryAddedDate ?? .distantPast)
+            }
+            return albums.prefix(limit).map { album in
                 MediaItemRef(
                     id: String(describing: album.id),
                     kind: .album,
@@ -250,10 +257,12 @@ final class MusicKitLibraryService: LibraryService {
             }
         case .playlist:
             var request = MusicLibraryRequest<Playlist>()
-            request.limit = limit
+            request.limit = fetchLimit
             request.includeOnlyDownloadedContent = downloadedOnly
-            request.sort(by: \.libraryAddedDate, ascending: false)
-            return try await request.response().items.map { playlist in
+            let playlists = try await request.response().items.sorted {
+                ($0.libraryAddedDate ?? .distantPast) > ($1.libraryAddedDate ?? .distantPast)
+            }
+            return playlists.prefix(limit).map { playlist in
                 MediaItemRef(
                     id: String(describing: playlist.id),
                     kind: .playlist,
@@ -265,10 +274,12 @@ final class MusicKitLibraryService: LibraryService {
             }
         case .artist:
             var request = MusicLibraryRequest<Artist>()
-            request.limit = limit
+            request.limit = fetchLimit
             request.includeOnlyDownloadedContent = downloadedOnly
-            request.sort(by: \.libraryAddedDate, ascending: false)
-            return try await request.response().items.map { artist in
+            let artists = try await request.response().items.sorted {
+                ($0.libraryAddedDate ?? .distantPast) > ($1.libraryAddedDate ?? .distantPast)
+            }
+            return artists.prefix(limit).map { artist in
                 MediaItemRef(
                     id: String(describing: artist.id),
                     kind: .artist,
@@ -289,10 +300,12 @@ final class MusicKitLibraryService: LibraryService {
         switch sectionID {
         case "recentlyPlayed":
             var request = MusicLibraryRequest<Song>()
-            request.limit = limit
+            request.limit = max(limit * 5, 100)
             request.includeOnlyDownloadedContent = downloadedOnly
-            request.sort(by: \.lastPlayedDate, ascending: false)
-            return try await request.response().items.map { song in
+            let songs = try await request.response().items.sorted {
+                ($0.lastPlayedDate ?? .distantPast) > ($1.lastPlayedDate ?? .distantPast)
+            }
+            return songs.prefix(limit).map { song in
                 MediaItemRef(
                     id: String(describing: song.id),
                     kind: .song,
@@ -309,7 +322,7 @@ final class MusicKitLibraryService: LibraryService {
         case "albums":
             return try await items(kind: .album, limit: limit, downloadedOnly: downloadedOnly)
         default:
-            throw AppError.unsupportedAction(action: "loading library section (sectionID)")
+            throw AppError.unsupportedAction(action: "loading library section \(sectionID)")
         }
     }
 }

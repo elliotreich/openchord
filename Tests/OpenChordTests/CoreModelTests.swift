@@ -51,6 +51,18 @@ struct CoreModelTests {
         #expect(error.userFacingMessage.contains("Music app"))
     }
 
+    @Test
+    func developerTokenFailuresExplainPerTeamSetup() {
+        struct DeveloperTokenError: LocalizedError {
+            var errorDescription: String? { "Failed to request developer token" }
+        }
+
+        let error = AppError.from(DeveloperTokenError())
+
+        #expect(error == .musicKitSetupRequired)
+        #expect(error.userFacingMessage.contains("Apple Developer team"))
+    }
+
     @Test @MainActor
     func previewEnvironmentSupportsSearchAndPlayback() async throws {
         let environment = AppEnvironment.preview()

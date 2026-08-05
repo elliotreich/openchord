@@ -8,6 +8,8 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 EXECUTABLE="$BUILD_DIR/OpenChord"
+BUNDLE_IDENTIFIER="${OPENCHORD_BUNDLE_IDENTIFIER:-com.openchord.app}"
+SIGNING_IDENTITY="${OPENCHORD_SIGNING_IDENTITY:--}"
 
 swift build --package-path "$ROOT_DIR"
 
@@ -43,6 +45,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP_DIR" >/dev/null
+plutil -replace CFBundleIdentifier -string "$BUNDLE_IDENTIFIER" "$CONTENTS_DIR/Info.plist"
+codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_DIR" >/dev/null
 
 echo "Packaged $APP_DIR"
