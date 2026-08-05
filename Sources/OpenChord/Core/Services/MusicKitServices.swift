@@ -8,13 +8,25 @@ final class MusicKitAuthorizationService: AuthorizationService {
     func refresh() async {
         let status = MusicAuthorization.currentStatus
         state.isAuthorized = status == .authorized
+        state.hasSubscription = nil
+        state.hasCloudLibrary = nil
         state.lastDiagnosticMessage = String(describing: status)
+
+        guard state.isAuthorized else { return }
+
+        do {
+            let subscription = try await MusicSubscription.current
+            state.hasSubscription = subscription.canPlayCatalogContent
+            state.hasCloudLibrary = subscription.hasCloudLibraryEnabled
+            state.lastDiagnosticMessage = subscription.description
+        } catch {
+            state.lastDiagnosticMessage = "(status): (error.localizedDescription)"
+        }
     }
 
     func requestAuthorization() async {
-        let status = await MusicAuthorization.request()
-        state.isAuthorized = status == .authorized
-        state.lastDiagnosticMessage = String(describing: status)
+        _ = await MusicAuthorization.request()
+        await refresh()
     }
 }
 

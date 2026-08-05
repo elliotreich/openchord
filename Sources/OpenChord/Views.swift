@@ -970,6 +970,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                musicAccessSection
                 themeSection
                 homeSectionConfiguration
                 playbackSection
@@ -987,6 +988,63 @@ struct SettingsView: View {
         }
         .padding(18)
         .background(cardBackground(accent: model.theme.accent.opacity(0.16)))
+    }
+
+    private var musicAccessSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Music Access")
+                    .font(.headline)
+                Spacer()
+                Text(model.authorizationStatus.description.capitalized)
+                    .foregroundStyle(.secondary)
+            }
+
+            accessRow("Catalog playback", value: accessValue(model.authorizationState.hasSubscription))
+            accessRow("Cloud Library", value: accessValue(model.authorizationState.hasCloudLibrary))
+
+            HStack {
+                Button("Request Access") {
+                    Task { await model.requestAuthorization() }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Refresh Diagnostics") {
+                    Task { await model.refreshAuthorization() }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let diagnostic = model.authorizationState.lastDiagnosticMessage {
+                Text(diagnostic)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(18)
+        .background(cardBackground(accent: Color.pink.opacity(0.12)))
+    }
+
+    private func accessRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+        .font(.subheadline)
+    }
+
+    private func accessValue(_ value: Bool?) -> String {
+        switch value {
+        case .some(true):
+            "Available"
+        case .some(false):
+            "Unavailable"
+        case nil:
+            "Not checked"
+        }
     }
 
     private var themeSection: some View {

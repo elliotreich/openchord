@@ -60,5 +60,10 @@ struct CoreModelTests {
         try await environment.playback.play(results[0])
         #expect(environment.playback.state.status == .playing)
         #expect(environment.playback.state.currentItem == results[0])
+
+        await environment.playback.setShuffle(enabled: true)
+        await environment.playback.setRepeatMode(.one)
+        #expect(environment.playback.state.shuffleEnabled)
+        #expect(environment.playback.state.repeatMode == .one)
     }
 }

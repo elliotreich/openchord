@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published var authorizationStatus: MusicAuthorization.Status = MusicAuthorization.currentStatus
+    @Published private(set) var authorizationState = AuthorizationState()
     @Published var selectedSection: AppSection = .home
     @Published var searchText: String = ""
     @Published var librarySearchText: String = ""
@@ -43,14 +44,17 @@ final class AppModel: ObservableObject {
 
     func refreshAuthorization() async {
         await environment.authorization.refresh()
+        authorizationState = environment.authorization.state
         authorizationStatus = MusicAuthorization.currentStatus
         guard authorizationStatus == .notDetermined else { return }
         await environment.authorization.requestAuthorization()
+        authorizationState = environment.authorization.state
         authorizationStatus = MusicAuthorization.currentStatus
     }
 
     func requestAuthorization() async {
         await environment.authorization.requestAuthorization()
+        authorizationState = environment.authorization.state
         authorizationStatus = MusicAuthorization.currentStatus
     }
 
