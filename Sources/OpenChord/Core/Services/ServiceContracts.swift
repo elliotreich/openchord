@@ -55,4 +55,13 @@ final class AppEnvironment {
         self.library = library
         self.playback = playback
     }
+
+    static func preview() -> AppEnvironment {
+        AppEnvironment(
+            authorization: MockAuthorizationService(),
+            catalog: MockCatalogService(),
+            library: MockLibraryService(),
+            playback: MockPlaybackService()
+        )
+    }
 }

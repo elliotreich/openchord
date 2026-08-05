@@ -49,4 +49,16 @@ struct CoreModelTests {
         #expect(error.errorDescription?.contains("playlist reordering") == true)
         #expect(error.recoverySuggestion?.contains("Music app") == true)
     }
+
+    @Test @MainActor
+    func previewEnvironmentSupportsSearchAndPlayback() async throws {
+        let environment = AppEnvironment.preview()
+        let query = MusicSearchQuery(term: "Preview", scope: .catalog, kinds: [.song])
+        let results = try await environment.catalog.search(query)
+
+        #expect(results.count == 1)
+        try await environment.playback.play(results[0])
+        #expect(environment.playback.state.status == .playing)
+        #expect(environment.playback.state.currentItem == results[0])
+    }
 }
