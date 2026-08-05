@@ -40,6 +40,8 @@ bash package-app.sh
 open dist/OpenChord.app
 ```
 
+The local package is ad-hoc signed for smoke testing. It is not a notarized release; sign it with your own team before distributing it to other users.
+
 ## Tech Stack
 
 - **Language**: Swift 6
