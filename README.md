@@ -9,7 +9,9 @@ OpenChord is a clean-room macOS Apple Music companion built with SwiftUI and Mus
 - **Playback Controls** — Play, pause, skip, shuffle, repeat via `ApplicationMusicPlayer`
 - **Queue Management** — View and control the upcoming queue
 - **Library Browse** — Browse downloaded songs, albums, playlists, and artists
-- **Customizable Home** — Reorder/configure home screen sections (Spotlight, Quick Actions, Queue Peek, Library Snapshot, Status)
+- **Configurable Music Home** — Independently loading library/chart sections with persisted order, layout, item limit, and artwork shape
+- **Detail Screens** — Album and playlist tracks plus artist albums/top songs with play and queue actions
+- **Customizable Dashboard** — Reorder/configure Spotlight, Quick Actions, Queue Peek, Library Snapshot, and Status cards
 - **Themes** — Midnight (dark), Paper (light), Ember (dark) with custom gradients
 - **Recent Searches** — Quick access to previous search terms
 - **Authorization** — Handles MusicKit authorization flow
@@ -66,7 +68,7 @@ Sources/OpenChord/
 Tests/OpenChordTests/   — Pure model, persistence, and preview-service tests
 ```
 
-The v2 architecture is being migrated incrementally toward injected MusicKit services, mockable previews/tests, typed errors, and versioned local persistence. Authorization and playback now run through the environment boundary; catalog and library UI migration remains incremental. The existing settings format remains backward-compatible during that migration.
+The v2 architecture is being migrated incrementally toward injected MusicKit services, mockable previews/tests, typed errors, and versioned local persistence. Authorization, catalog search, library search/browse, detail loading, playback, and configurable Home sections now run through the environment boundary. The existing settings payload remains backward-compatible; v2 Home configuration is an additive optional field.
 
 ## Design Philosophy
 

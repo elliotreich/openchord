@@ -20,7 +20,7 @@ final class MusicKitAuthorizationService: AuthorizationService {
             state.hasCloudLibrary = subscription.hasCloudLibraryEnabled
             state.lastDiagnosticMessage = subscription.description
         } catch {
-            state.lastDiagnosticMessage = "(status): (error.localizedDescription)"
+            state.lastDiagnosticMessage = "\(status): \(error.localizedDescription)"
         }
     }
 
@@ -98,7 +98,54 @@ final class MusicKitCatalogService: CatalogService {
     }
 
     func items(for sectionID: String, limit: Int) async throws -> [MediaItemRef] {
-        throw AppError.unsupportedAction(action: "catalog section \(sectionID)")
+        guard limit > 0 else { return [] }
+
+        switch sectionID {
+        case "topSongs":
+            var request = MusicCatalogChartsRequest(kinds: [.mostPlayed], types: [Song.self])
+            request.limit = limit
+            let response = try await request.response()
+            return response.songCharts.first?.items.map { song in
+                MediaItemRef(
+                    id: String(describing: song.id),
+                    kind: .song,
+                    title: song.title,
+                    subtitle: song.artistName,
+                    artworkURL: song.artwork?.url(width: 480, height: 480),
+                    source: .catalog
+                )
+            } ?? []
+        case "topAlbums":
+            var request = MusicCatalogChartsRequest(kinds: [.mostPlayed], types: [Album.self])
+            request.limit = limit
+            let response = try await request.response()
+            return response.albumCharts.first?.items.map { album in
+                MediaItemRef(
+                    id: String(describing: album.id),
+                    kind: .album,
+                    title: album.title,
+                    subtitle: album.artistName,
+                    artworkURL: album.artwork?.url(width: 480, height: 480),
+                    source: .catalog
+                )
+            } ?? []
+        case "topPlaylists":
+            var request = MusicCatalogChartsRequest(kinds: [.mostPlayed], types: [Playlist.self])
+            request.limit = limit
+            let response = try await request.response()
+            return response.playlistCharts.first?.items.map { playlist in
+                MediaItemRef(
+                    id: String(describing: playlist.id),
+                    kind: .playlist,
+                    title: playlist.name,
+                    subtitle: playlist.curatorName ?? "Apple Music",
+                    artworkURL: playlist.artwork?.url(width: 480, height: 480),
+                    source: .catalog
+                )
+            } ?? []
+        default:
+            throw AppError.unsupportedAction(action: "loading catalog section (sectionID)")
+        }
     }
 }
 
@@ -233,6 +280,36 @@ final class MusicKitLibraryService: LibraryService {
             }
         case .musicVideo:
             throw AppError.unsupportedAction(action: "library music-video browsing")
+        }
+    }
+
+    func items(for sectionID: String, limit: Int, downloadedOnly: Bool) async throws -> [MediaItemRef] {
+        guard limit > 0 else { return [] }
+
+        switch sectionID {
+        case "recentlyPlayed":
+            var request = MusicLibraryRequest<Song>()
+            request.limit = limit
+            request.includeOnlyDownloadedContent = downloadedOnly
+            request.sort(by: \.lastPlayedDate, ascending: false)
+            return try await request.response().items.map { song in
+                MediaItemRef(
+                    id: String(describing: song.id),
+                    kind: .song,
+                    title: song.title,
+                    subtitle: song.artistName,
+                    artworkURL: song.artwork?.url(width: 480, height: 480),
+                    source: .library
+                )
+            }
+        case "recentlyAdded":
+            return try await items(kind: .song, limit: limit, downloadedOnly: downloadedOnly)
+        case "playlists":
+            return try await items(kind: .playlist, limit: limit, downloadedOnly: downloadedOnly)
+        case "albums":
+            return try await items(kind: .album, limit: limit, downloadedOnly: downloadedOnly)
+        default:
+            throw AppError.unsupportedAction(action: "loading library section (sectionID)")
         }
     }
 }

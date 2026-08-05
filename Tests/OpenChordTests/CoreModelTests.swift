@@ -67,4 +67,24 @@ struct CoreModelTests {
         #expect(environment.playback.state.shuffleEnabled)
         #expect(environment.playback.state.repeatMode == .one)
     }
+
+    @Test @MainActor
+    func previewEnvironmentSupportsHomeSectionsAndDetails() async throws {
+        let environment = AppEnvironment.preview()
+
+        let topAlbums = try await environment.catalog.items(for: "topAlbums", limit: 4)
+        #expect(topAlbums.count == 1)
+        #expect(topAlbums.first?.kind == .album)
+
+        let libraryAlbums = try await environment.library.items(kind: .album, limit: 4, downloadedOnly: false)
+        #expect(libraryAlbums.count == 1)
+        let tracks = try await environment.details.tracks(for: libraryAlbums[0])
+        #expect(tracks.count == 3)
+        #expect(tracks.allSatisfy { $0.kind == .song })
+
+        let libraryArtists = try await environment.library.items(kind: .artist, limit: 4, downloadedOnly: false)
+        let artistContent = try await environment.details.artistContent(for: libraryArtists[0])
+        #expect(artistContent.albums.count == 1)
+        #expect(artistContent.topSongs.count == 1)
+    }
 }

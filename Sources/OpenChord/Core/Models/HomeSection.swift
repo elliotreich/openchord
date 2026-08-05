@@ -49,6 +49,38 @@ enum HomeArtworkShape: String, CaseIterable, Codable, Hashable, Sendable {
     case circle
 }
 
+enum HomeSectionLayoutChoice: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case carousel
+    case grid
+    case list
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .carousel:
+            "Carousel"
+        case .grid:
+            "Grid"
+        case .list:
+            "List"
+        }
+    }
+}
+
+extension HomeSectionLayout {
+    var choice: HomeSectionLayoutChoice {
+        switch self {
+        case .carousel:
+            .carousel
+        case .grid:
+            .grid
+        case .list:
+            .list
+        }
+    }
+}
+
 struct HomeSection: Codable, Hashable, Identifiable, Sendable {
     let id: UUID
     var kindID: String
@@ -84,6 +116,14 @@ struct HomeSection: Codable, Hashable, Identifiable, Sendable {
         HomeSection(kindID: "recentlyAdded", title: "Recently Added", order: 1),
         HomeSection(kindID: "playlists", title: "Playlists", order: 2),
         HomeSection(kindID: "albums", title: "Albums", order: 3),
-        HomeSection(kindID: "newReleases", title: "New Releases", order: 4)
+        HomeSection(kindID: "topSongs", title: "Top Songs", order: 4),
+        HomeSection(kindID: "topAlbums", title: "Top Albums", order: 5)
     ]
+}
+
+struct HomeSectionContent: Equatable, Sendable {
+    var items: [MediaItemRef] = []
+    var isLoading = false
+    var errorMessage: String?
+    var lastUpdated: Date?
 }

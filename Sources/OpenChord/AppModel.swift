@@ -21,6 +21,8 @@ final class AppModel: ObservableObject {
     @Published var recentSearches: [String]
     @Published var libraryBrowse = LibraryBrowseSnapshot()
     @Published var libraryBrowseDownloadedOnly = false
+    @Published var configurableHomeSections: [HomeSection]
+    @Published private(set) var homeContent: [UUID: HomeSectionContent]
 
     private let environment: AppEnvironment
     private let settingsStore = SettingsStore()
@@ -34,11 +36,15 @@ final class AppModel: ObservableObject {
         self.queueRepeatMode = persisted?.queueRepeatMode.musicKitValue ?? .none
         self.recentSearches = persisted?.recentSearches ?? []
         self.libraryBrowseDownloadedOnly = persisted?.libraryBrowseDownloadedOnly ?? false
+        let configurableHomeSections = persisted?.configurableHomeSections ?? HomeSection.v2Defaults
+        self.configurableHomeSections = configurableHomeSections
+        self.homeContent = Dictionary(uniqueKeysWithValues: configurableHomeSections.map { ($0.id, HomeSectionContent()) })
 
         Task {
             await refreshAuthorization()
             await refreshPlaybackSnapshot()
             await loadLibraryBrowse()
+            await loadHomeContent()
         }
     }
 
@@ -56,6 +62,8 @@ final class AppModel: ObservableObject {
         await environment.authorization.requestAuthorization()
         authorizationState = environment.authorization.state
         authorizationStatus = MusicAuthorization.currentStatus
+        await loadLibraryBrowse()
+        await loadHomeContent()
     }
 
     func refreshPlaybackSnapshot() async {
@@ -100,14 +108,12 @@ final class AppModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            let request = MusicCatalogSearchRequest(term: term, types: [Song.self, Album.self, Playlist.self, Artist.self])
-            let response = try await request.response()
-            catalogResults = SearchResults(
-                songs: response.songs.map { .song($0, source: .catalog) },
-                albums: response.albums.map { .album($0, source: .catalog) },
-                playlists: response.playlists.map { .playlist($0, source: .catalog) },
-                artists: response.artists.map { .artist($0, source: .catalog) }
+            let query = MusicSearchQuery(
+                term: term,
+                scope: .catalog,
+                kinds: [.song, .album, .playlist, .artist]
             )
+            catalogResults = SearchResults(items: try await environment.catalog.search(query))
             recordRecentSearch(term)
             lastErrorMessage = nil
         } catch {
@@ -125,14 +131,12 @@ final class AppModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            let request = MusicLibrarySearchRequest(term: term, types: [Song.self, Album.self, Playlist.self, Artist.self])
-            let response = try await request.response()
-            libraryResults = SearchResults(
-                songs: response.songs.map { .song($0, source: .library) },
-                albums: response.albums.map { .album($0, source: .library) },
-                playlists: response.playlists.map { .playlist($0, source: .library) },
-                artists: response.artists.map { .artist($0, source: .library) }
+            let query = MusicSearchQuery(
+                term: term,
+                scope: .library,
+                kinds: [.song, .album, .playlist, .artist]
             )
+            libraryResults = SearchResults(items: try await environment.library.search(query))
             recordRecentSearch(term)
             lastErrorMessage = nil
         } catch {
@@ -140,10 +144,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func play(_ hit: SearchHit) async {
-        guard let item = hit.mediaItemReference else {
-            searchText = hit.title
-            await performCatalogSearch()
+    func play(_ item: MediaItemRef) async {
+        guard item.isPlayable else {
+            lastErrorMessage = AppError.unsupportedAction(action: unsupportedPlaybackAction(for: item)).userFacingMessage
             return
         }
 
@@ -155,29 +158,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func playNext(_ hit: SearchHit) async {
-        await queue(hit, position: .afterCurrentEntry)
+    func playNext(_ item: MediaItemRef) async {
+        await queue(item, position: .afterCurrentEntry)
     }
 
-    func addToQueue(_ hit: SearchHit) async {
-        await queue(hit, position: .tail)
+    func addToQueue(_ item: MediaItemRef) async {
+        await queue(item, position: .tail)
     }
 
-    func play(_ track: Track, source: MediaSource = .catalog) async {
-        do {
-            try await environment.playback.play(track.mediaItemReference(source: source))
-            await refreshPlaybackSnapshot()
-        } catch {
-            lastErrorMessage = AppError.from(error).userFacingMessage
-        }
+    func loadTracks(for item: MediaItemRef) async throws -> [MediaItemRef] {
+        try await environment.details.tracks(for: item)
     }
 
-    func playNext(_ track: Track, source: MediaSource = .catalog) async {
-        await queue(track, source: source, position: .afterCurrentEntry)
-    }
-
-    func addToQueue(_ track: Track, source: MediaSource = .catalog) async {
-        await queue(track, source: source, position: .tail)
+    func loadArtistContent(for item: MediaItemRef) async throws -> ArtistDetail {
+        try await environment.details.artistContent(for: item)
     }
 
     func clearRecentSearches() {
@@ -283,6 +277,53 @@ final class AppModel: ObservableObject {
         await performCatalogSearch()
         await performLibrarySearch()
         await loadLibraryBrowse()
+        await loadHomeContent()
+    }
+
+    func loadHomeContent() async {
+        let sections = configurableHomeSections
+            .filter(\.isEnabled)
+            .sorted { $0.order < $1.order }
+
+        for section in sections {
+            await loadHomeSection(section)
+        }
+    }
+
+    func reloadHomeSection(_ sectionID: UUID) async {
+        guard let section = configurableHomeSections.first(where: { $0.id == sectionID }) else { return }
+        await loadHomeSection(section)
+    }
+
+    func setConfigurableHomeSectionEnabled(_ sectionID: UUID, enabled: Bool) {
+        guard let index = configurableHomeSections.firstIndex(where: { $0.id == sectionID }) else { return }
+        configurableHomeSections[index].isEnabled = enabled
+        persistSettings()
+        guard enabled else { return }
+        let section = configurableHomeSections[index]
+        Task { await loadHomeSection(section) }
+    }
+
+    func moveConfigurableHomeSection(from offsets: IndexSet, to destination: Int) {
+        configurableHomeSections.move(fromOffsets: offsets, toOffset: destination)
+        normalizeConfigurableHomeSectionOrder()
+        persistSettings()
+    }
+
+    func updateConfigurableHomeSection(_ sectionID: UUID, layout: HomeSectionLayout? = nil, itemLimit: Int? = nil, artworkShape: HomeArtworkShape? = nil) {
+        guard let index = configurableHomeSections.firstIndex(where: { $0.id == sectionID }) else { return }
+        if let layout {
+            configurableHomeSections[index].layout = layout
+        }
+        if let itemLimit {
+            configurableHomeSections[index].itemLimit = max(1, itemLimit)
+        }
+        if let artworkShape {
+            configurableHomeSections[index].artworkShape = artworkShape
+        }
+        persistSettings()
+        let section = configurableHomeSections[index]
+        Task { await loadHomeSection(section) }
     }
 
     func loadLibraryBrowse() async {
@@ -290,30 +331,17 @@ final class AppModel: ObservableObject {
         libraryBrowse.isLoading = true
         defer { libraryBrowse.isLoading = false }
 
-        async let songsTask = loadLibraryItems(Song.self, limit: 10, downloadedOnly: downloadedOnly) { request in
-            request.sort(by: \.libraryAddedDate, ascending: false)
-        }
-        async let albumsTask = loadLibraryItems(Album.self, limit: 10, downloadedOnly: downloadedOnly) { request in
-            request.sort(by: \.libraryAddedDate, ascending: false)
-        }
-        async let playlistsTask = loadLibraryItems(Playlist.self, limit: 10, downloadedOnly: downloadedOnly) { request in
-            request.sort(by: \.libraryAddedDate, ascending: false)
-        }
-        async let artistsTask = loadLibraryItems(Artist.self, limit: 10, downloadedOnly: downloadedOnly) { request in
-            request.sort(by: \.libraryAddedDate, ascending: false)
-        }
-
         do {
-            let songs = try await songsTask
-            let albums = try await albumsTask
-            let playlists = try await playlistsTask
-            let artists = try await artistsTask
+            let songs = try await environment.library.items(kind: .song, limit: 10, downloadedOnly: downloadedOnly)
+            let albums = try await environment.library.items(kind: .album, limit: 10, downloadedOnly: downloadedOnly)
+            let playlists = try await environment.library.items(kind: .playlist, limit: 10, downloadedOnly: downloadedOnly)
+            let artists = try await environment.library.items(kind: .artist, limit: 10, downloadedOnly: downloadedOnly)
 
             libraryBrowse = LibraryBrowseSnapshot(
-                songs: songs.map { .song($0, source: .library) },
-                albums: albums.map { .album($0, source: .library) },
-                playlists: playlists.map { .playlist($0, source: .library) },
-                artists: artists.map { .artist($0, source: .library) },
+                songs: songs,
+                albums: albums,
+                playlists: playlists,
+                artists: artists,
                 downloadedOnly: downloadedOnly,
                 lastUpdated: Date()
             )
@@ -323,10 +351,44 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func queue(_ hit: SearchHit, position: MusicPlayer.Queue.EntryInsertionPosition) async {
-        guard let item = hit.mediaItemReference else {
-            searchText = hit.title
-            await performCatalogSearch()
+    private func loadHomeSection(_ section: HomeSection) async {
+        homeContent[section.id] = HomeSectionContent(isLoading: true)
+
+        do {
+            let items: [MediaItemRef]
+            switch section.kindID {
+            case "topSongs", "topAlbums", "topPlaylists":
+                items = try await environment.catalog.items(for: section.kindID, limit: section.itemLimit)
+            case "recentlyPlayed", "recentlyAdded", "playlists", "albums":
+                items = try await environment.library.items(for: section.kindID, limit: section.itemLimit, downloadedOnly: false)
+            default:
+                throw AppError.unsupportedAction(action: "loading home section \(section.kindID)")
+            }
+
+            homeContent[section.id] = HomeSectionContent(
+                items: items,
+                isLoading: false,
+                errorMessage: nil,
+                lastUpdated: Date()
+            )
+        } catch {
+            homeContent[section.id] = HomeSectionContent(
+                isLoading: false,
+                errorMessage: AppError.from(error).userFacingMessage,
+                lastUpdated: Date()
+            )
+        }
+    }
+
+    private func normalizeConfigurableHomeSectionOrder() {
+        for index in configurableHomeSections.indices {
+            configurableHomeSections[index].order = index
+        }
+    }
+
+    private func queue(_ item: MediaItemRef, position: MusicPlayer.Queue.EntryInsertionPosition) async {
+        guard item.isPlayable else {
+            lastErrorMessage = AppError.unsupportedAction(action: unsupportedPlaybackAction(for: item)).userFacingMessage
             return
         }
 
@@ -345,33 +407,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func queue(_ track: Track, source: MediaSource, position: MusicPlayer.Queue.EntryInsertionPosition) async {
-        do {
-            switch position {
-            case .afterCurrentEntry:
-                try await environment.playback.playNext(track.mediaItemReference(source: source))
-            case .tail:
-                try await environment.playback.addToQueue(track.mediaItemReference(source: source))
-            @unknown default:
-                return
-            }
-            await refreshPlaybackSnapshot()
-        } catch {
-            lastErrorMessage = AppError.from(error).userFacingMessage
+    private func unsupportedPlaybackAction(for item: MediaItemRef) -> String {
+        switch item.kind {
+        case .artist:
+            "playing an artist"
+        case .musicVideo:
+            "playing a music video"
+        default:
+            "playing this item"
         }
-    }
-
-    private func loadLibraryItems<Item: MusicLibraryRequestable>(
-        _ type: Item.Type,
-        limit: Int,
-        downloadedOnly: Bool,
-        configure: (inout MusicLibraryRequest<Item>) -> Void
-    ) async throws -> [Item] {
-        var request = MusicLibraryRequest<Item>()
-        request.limit = limit
-        request.includeOnlyDownloadedContent = downloadedOnly
-        configure(&request)
-        return try await request.response().items.map { $0 }
     }
 
     private func recordRecentSearch(_ term: String) {
@@ -392,7 +436,8 @@ final class AppModel: ObservableObject {
             queueShuffleEnabled: queueShuffleEnabled,
             queueRepeatMode: queueRepeatMode,
             recentSearches: recentSearches,
-            libraryBrowseDownloadedOnly: libraryBrowseDownloadedOnly
+            libraryBrowseDownloadedOnly: libraryBrowseDownloadedOnly,
+            configurableHomeSections: configurableHomeSections
         )
 
         do {
@@ -416,14 +461,16 @@ private struct PersistedState: Codable {
     var queueRepeatMode: QueueRepeatModeCodable
     var recentSearches: [String]
     var libraryBrowseDownloadedOnly: Bool
+    var configurableHomeSections: [HomeSection]?
 
-    init(homeSections: [HomeSectionKind], theme: AppTheme, queueShuffleEnabled: Bool, queueRepeatMode: MusicPlayer.RepeatMode, recentSearches: [String], libraryBrowseDownloadedOnly: Bool) {
+    init(homeSections: [HomeSectionKind], theme: AppTheme, queueShuffleEnabled: Bool, queueRepeatMode: MusicPlayer.RepeatMode, recentSearches: [String], libraryBrowseDownloadedOnly: Bool, configurableHomeSections: [HomeSection]) {
         self.homeSections = homeSections
         self.theme = theme
         self.queueShuffleEnabled = queueShuffleEnabled
         self.queueRepeatMode = QueueRepeatModeCodable(queueRepeatMode)
         self.recentSearches = recentSearches
         self.libraryBrowseDownloadedOnly = libraryBrowseDownloadedOnly
+        self.configurableHomeSections = configurableHomeSections
     }
 
     enum CodingKeys: String, CodingKey {
@@ -433,6 +480,7 @@ private struct PersistedState: Codable {
         case queueRepeatMode
         case recentSearches
         case libraryBrowseDownloadedOnly
+        case configurableHomeSections
     }
 
     init(from decoder: Decoder) throws {
@@ -443,6 +491,7 @@ private struct PersistedState: Codable {
         queueRepeatMode = try container.decode(QueueRepeatModeCodable.self, forKey: .queueRepeatMode)
         recentSearches = try container.decodeIfPresent([String].self, forKey: .recentSearches) ?? []
         libraryBrowseDownloadedOnly = try container.decodeIfPresent(Bool.self, forKey: .libraryBrowseDownloadedOnly) ?? false
+        configurableHomeSections = try container.decodeIfPresent([HomeSection].self, forKey: .configurableHomeSections)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -453,6 +502,7 @@ private struct PersistedState: Codable {
         try container.encode(queueRepeatMode, forKey: .queueRepeatMode)
         try container.encode(recentSearches, forKey: .recentSearches)
         try container.encode(libraryBrowseDownloadedOnly, forKey: .libraryBrowseDownloadedOnly)
+        try container.encodeIfPresent(configurableHomeSections, forKey: .configurableHomeSections)
     }
 }
 
@@ -495,10 +545,17 @@ private struct QueueRepeatModeCodable: Codable {
 }
 
 struct SearchResults {
-    var songs: [SearchHit] = []
-    var albums: [SearchHit] = []
-    var playlists: [SearchHit] = []
-    var artists: [SearchHit] = []
+    var songs: [MediaItemRef] = []
+    var albums: [MediaItemRef] = []
+    var playlists: [MediaItemRef] = []
+    var artists: [MediaItemRef] = []
+
+    init(items: [MediaItemRef] = []) {
+        songs = items.filter { $0.kind == .song }
+        albums = items.filter { $0.kind == .album }
+        playlists = items.filter { $0.kind == .playlist }
+        artists = items.filter { $0.kind == .artist }
+    }
 
     var isEmpty: Bool {
         songs.isEmpty && albums.isEmpty && playlists.isEmpty && artists.isEmpty
@@ -506,196 +563,6 @@ struct SearchResults {
 
     var totalCount: Int {
         songs.count + albums.count + playlists.count + artists.count
-    }
-}
-
-enum SearchSource: String, Codable, Hashable {
-    case catalog
-    case library
-
-    var label: String {
-        switch self {
-        case .catalog:
-            return "Apple Music"
-        case .library:
-            return "Library"
-        }
-    }
-}
-
-extension SearchSource {
-    var mediaSource: MediaSource {
-        switch self {
-        case .catalog:
-            .catalog
-        case .library:
-            .library
-        }
-    }
-}
-
-enum SearchHit: Hashable, Identifiable {
-    case song(Song, source: SearchSource)
-    case album(Album, source: SearchSource)
-    case playlist(Playlist, source: SearchSource)
-    case artist(Artist, source: SearchSource)
-
-    var id: String {
-        switch self {
-        case .song(let song, let source):
-            return "\(source.rawValue)-song-\(String(describing: song.id))"
-        case .album(let album, let source):
-            return "\(source.rawValue)-album-\(String(describing: album.id))"
-        case .playlist(let playlist, let source):
-            return "\(source.rawValue)-playlist-\(String(describing: playlist.id))"
-        case .artist(let artist, let source):
-            return "\(source.rawValue)-artist-\(String(describing: artist.id))"
-        }
-    }
-
-    var source: SearchSource {
-        switch self {
-        case .song(_, let source), .album(_, let source), .playlist(_, let source), .artist(_, let source):
-            return source
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .song(let song, _):
-            return song.title
-        case .album(let album, _):
-            return album.title
-        case .playlist(let playlist, _):
-            return playlist.name
-        case .artist(let artist, _):
-            return artist.name
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .song(let song, _):
-            return [song.artistName, song.albumTitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " • ")
-        case .album(let album, _):
-            return album.artistName
-        case .playlist(let playlist, _):
-            return playlist.curatorName ?? source.label
-        case .artist(_, let source):
-            return source.label + " artist"
-        }
-    }
-
-    var artworkURL: URL? {
-        switch self {
-        case .song(let song, _):
-            return song.artwork?.url(width: 480, height: 480)
-        case .album(let album, _):
-            return album.artwork?.url(width: 480, height: 480)
-        case .playlist(let playlist, _):
-            return playlist.artwork?.url(width: 480, height: 480)
-        case .artist(let artist, _):
-            return artist.artwork?.url(width: 480, height: 480)
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .song:
-            return "music.note"
-        case .album:
-            return "square.stack"
-        case .playlist:
-            return "music.note.list"
-        case .artist:
-            return "person.crop.square"
-        }
-    }
-
-    var playableDescription: String {
-        switch self {
-        case .song:
-            return "Song"
-        case .album:
-            return "Album"
-        case .playlist:
-            return "Playlist"
-        case .artist:
-            return "Artist"
-        }
-    }
-
-    var isPlayable: Bool {
-        if case .artist = self { return false }
-        return true
-    }
-
-    var mediaItemReference: MediaItemRef? {
-        switch self {
-        case .song(let song, let source):
-            return MediaItemRef(
-                id: String(describing: song.id),
-                kind: .song,
-                title: song.title,
-                subtitle: subtitle,
-                artworkURL: artworkURL,
-                source: source.mediaSource
-            )
-        case .album(let album, let source):
-            return MediaItemRef(
-                id: String(describing: album.id),
-                kind: .album,
-                title: album.title,
-                subtitle: album.artistName,
-                artworkURL: artworkURL,
-                source: source.mediaSource
-            )
-        case .playlist(let playlist, let source):
-            return MediaItemRef(
-                id: String(describing: playlist.id),
-                kind: .playlist,
-                title: playlist.name,
-                subtitle: subtitle,
-                artworkURL: artworkURL,
-                source: source.mediaSource
-            )
-        case .artist:
-            return nil
-        }
-    }
-}
-
-private extension Track {
-    func mediaItemReference(source: MediaSource) -> MediaItemRef {
-        switch self {
-        case .song(let song):
-            return MediaItemRef(
-                id: String(describing: song.id),
-                kind: .song,
-                title: song.title,
-                subtitle: song.artistName,
-                artworkURL: song.artwork?.url(width: 480, height: 480),
-                source: source
-            )
-        case .musicVideo(let musicVideo):
-            return MediaItemRef(
-                id: String(describing: musicVideo.id),
-                kind: .musicVideo,
-                title: musicVideo.title,
-                subtitle: musicVideo.artistName,
-                artworkURL: musicVideo.artwork?.url(width: 480, height: 480),
-                source: source
-            )
-        @unknown default:
-            return MediaItemRef(
-                id: String(describing: id),
-                kind: .song,
-                title: title,
-                subtitle: artistName,
-                artworkURL: artwork?.url(width: 480, height: 480),
-                source: source
-            )
-        }
     }
 }
 
@@ -708,10 +575,10 @@ struct QueueSnapshot {
 }
 
 struct LibraryBrowseSnapshot {
-    var songs: [SearchHit] = []
-    var albums: [SearchHit] = []
-    var playlists: [SearchHit] = []
-    var artists: [SearchHit] = []
+    var songs: [MediaItemRef] = []
+    var albums: [MediaItemRef] = []
+    var playlists: [MediaItemRef] = []
+    var artists: [MediaItemRef] = []
     var downloadedOnly = false
     var isLoading = false
     var lastUpdated: Date?

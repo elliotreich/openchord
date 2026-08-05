@@ -35,7 +35,18 @@ final class MockCatalogService: CatalogService {
     }
 
     func items(for sectionID: String, limit: Int) async throws -> [MediaItemRef] {
-        Array(items.prefix(max(0, limit)))
+        let matchingItems: [MediaItemRef]
+        switch sectionID {
+        case "topSongs":
+            matchingItems = items.filter { $0.kind == .song }
+        case "topAlbums":
+            matchingItems = items.filter { $0.kind == .album }
+        case "topPlaylists":
+            matchingItems = items.filter { $0.kind == .playlist }
+        default:
+            throw AppError.unsupportedAction(action: "loading catalog section (sectionID)")
+        }
+        return Array(matchingItems.prefix(max(0, limit)))
     }
 }
 
@@ -59,6 +70,62 @@ final class MockLibraryService: LibraryService {
 
     func items(kind: MediaKind, limit: Int, downloadedOnly: Bool) async throws -> [MediaItemRef] {
         Array(items.filter { $0.kind == kind }.prefix(max(0, limit)))
+    }
+
+    func items(for sectionID: String, limit: Int, downloadedOnly: Bool) async throws -> [MediaItemRef] {
+        let kind: MediaKind
+        switch sectionID {
+        case "recentlyPlayed", "recentlyAdded":
+            kind = .song
+        case "playlists":
+            kind = .playlist
+        case "albums":
+            kind = .album
+        default:
+            throw AppError.unsupportedAction(action: "loading library section (sectionID)")
+        }
+        return try await items(kind: kind, limit: limit, downloadedOnly: downloadedOnly)
+    }
+}
+
+@MainActor
+final class MockMediaDetailService: MediaDetailService {
+    func tracks(for item: MediaItemRef) async throws -> [MediaItemRef] {
+        guard item.kind == .album || item.kind == .playlist else {
+            throw AppError.unsupportedAction(action: "loading tracks for a (item.kind.rawValue)")
+        }
+
+        return (1...3).map { index in
+            MediaItemRef(
+                id: "\(item.id)-track-\(index)",
+                kind: .song,
+                title: "\(item.title) Track \(index)",
+                subtitle: item.subtitle,
+                source: item.source
+            )
+        }
+    }
+
+    func artistContent(for item: MediaItemRef) async throws -> ArtistDetail {
+        guard item.kind == .artist else {
+            throw AppError.unsupportedAction(action: "loading artist content for a \(item.kind.rawValue)")
+        }
+
+        let album = MediaItemRef(
+            id: "\(item.id)-album-1",
+            kind: .album,
+            title: "Preview Album",
+            subtitle: item.title,
+            source: item.source
+        )
+        let song = MediaItemRef(
+            id: "\(item.id)-song-1",
+            kind: .song,
+            title: "Preview Top Song",
+            subtitle: item.title,
+            source: item.source
+        )
+        return ArtistDetail(albums: [album], topSongs: [song])
     }
 }
 

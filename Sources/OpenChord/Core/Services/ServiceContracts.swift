@@ -24,6 +24,18 @@ protocol CatalogService {
 protocol LibraryService {
     func search(_ query: MusicSearchQuery) async throws -> [MediaItemRef]
     func items(kind: MediaKind, limit: Int, downloadedOnly: Bool) async throws -> [MediaItemRef]
+    func items(for sectionID: String, limit: Int, downloadedOnly: Bool) async throws -> [MediaItemRef]
+}
+
+@MainActor
+protocol MediaDetailService {
+    func tracks(for item: MediaItemRef) async throws -> [MediaItemRef]
+    func artistContent(for item: MediaItemRef) async throws -> ArtistDetail
+}
+
+struct ArtistDetail: Equatable, Sendable {
+    let albums: [MediaItemRef]
+    let topSongs: [MediaItemRef]
 }
 
 @MainActor
@@ -45,17 +57,20 @@ final class AppEnvironment {
     let authorization: any AuthorizationService
     let catalog: any CatalogService
     let library: any LibraryService
+    let details: any MediaDetailService
     let playback: any PlaybackService
 
     init(
         authorization: any AuthorizationService,
         catalog: any CatalogService,
         library: any LibraryService,
+        details: any MediaDetailService,
         playback: any PlaybackService
     ) {
         self.authorization = authorization
         self.catalog = catalog
         self.library = library
+        self.details = details
         self.playback = playback
     }
 
@@ -64,6 +79,7 @@ final class AppEnvironment {
             authorization: MockAuthorizationService(),
             catalog: MockCatalogService(),
             library: MockLibraryService(),
+            details: MockMediaDetailService(),
             playback: MockPlaybackService()
         )
     }
@@ -73,6 +89,7 @@ final class AppEnvironment {
             authorization: MusicKitAuthorizationService(),
             catalog: MusicKitCatalogService(),
             library: MusicKitLibraryService(),
+            details: MusicKitMediaDetailService(),
             playback: MusicKitPlaybackService()
         )
     }

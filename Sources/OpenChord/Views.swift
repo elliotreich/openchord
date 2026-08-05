@@ -5,17 +5,23 @@ struct HomeView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                heroCard
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    heroCard
+                    configurableHomeContent
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
-                    ForEach(model.homeSections) { section in
-                        homeSectionCard(section)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
+                        ForEach(model.homeSections) { section in
+                            homeSectionCard(section)
+                        }
                     }
                 }
+                .padding(24)
             }
-            .padding(24)
+            .navigationDestination(for: MediaItemRef.self) { item in
+                LibraryDetailView(item: item)
+            }
         }
     }
 
@@ -73,6 +79,43 @@ struct HomeView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(model.theme.accent)
+    }
+
+    @ViewBuilder
+    private var configurableHomeContent: some View {
+        let enabledSections = model.configurableHomeSections
+            .filter { $0.isEnabled }
+            .sorted { $0.order < $1.order }
+
+        if !enabledSections.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your Music")
+                            .font(.title2.bold())
+                        Text("Personal library sections and Apple Music charts, loaded independently.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        Task { await model.loadHomeContent() }
+                    } label: {
+                        Label("Refresh Home", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(enabledSections) { section in
+                        ConfigurableHomeSectionView(
+                            section: section,
+                            content: model.homeContent[section.id] ?? HomeSectionContent()
+                        )
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -212,6 +255,123 @@ struct HomeView: View {
     }
 }
 
+struct ConfigurableHomeSectionView: View {
+    @EnvironmentObject private var model: AppModel
+
+    let section: HomeSection
+    let content: HomeSectionContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(section.title)
+                    .font(.title3.bold())
+                Spacer()
+                Button {
+                    Task { await model.reloadHomeSection(section.id) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh \(section.title)")
+            }
+
+            if content.isLoading {
+                ProgressView("Loading \(section.title)…")
+                    .frame(maxWidth: .infinity, minHeight: 96)
+            } else if let errorMessage = content.errorMessage {
+                HStack(spacing: 10) {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Retry") {
+                        Task { await model.reloadHomeSection(section.id) }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else if content.items.isEmpty {
+                Text("Nothing is available for this section yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            } else {
+                sectionItems
+            }
+        }
+        .padding(18)
+        .background(cardBackground(accent: model.theme.accent.opacity(0.14)))
+    }
+
+    @ViewBuilder
+    private var sectionItems: some View {
+        switch section.layout {
+        case .carousel(let rows):
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHGrid(
+                    rows: Array(repeating: GridItem(.fixed(202), spacing: 12), count: max(1, min(rows, 2))),
+                    spacing: 14
+                ) {
+                    ForEach(content.items) { item in
+                        homeItem(item)
+                    }
+                }
+                .frame(height: CGFloat(max(1, min(rows, 2))) * 202)
+            }
+        case .grid(let columns):
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(minimum: 120), spacing: 12), count: max(1, min(columns, 5))),
+                spacing: 14
+            ) {
+                ForEach(content.items) { item in
+                    homeItem(item)
+                }
+            }
+        case .list:
+            MediaItemActionList(items: content.items)
+        }
+    }
+
+    @ViewBuilder
+    private func homeItem(_ item: MediaItemRef) -> some View {
+        if item.kind == .song {
+            Button {
+                Task { await model.play(item) }
+            } label: {
+                ConfigurableHomeItemCard(item: item, artworkShape: section.artworkShape)
+            }
+            .buttonStyle(.plain)
+        } else {
+            NavigationLink(value: item) {
+                ConfigurableHomeItemCard(item: item, artworkShape: section.artworkShape)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+struct ConfigurableHomeItemCard: View {
+    let item: MediaItemRef
+    let artworkShape: HomeArtworkShape
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ArtworkThumbnail(
+                url: item.artworkURL,
+                size: 144,
+                symbolName: item.symbolName,
+                shape: artworkShape
+            )
+            Text(item.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            Text(item.subtitle.isEmpty ? item.playableDescription : item.subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(width: 144, alignment: .leading)
+    }
+}
+
 struct SearchView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -333,7 +493,7 @@ struct LibraryView: View {
                     await model.loadLibraryBrowse()
                 }
             }
-            .navigationDestination(for: SearchHit.self) { item in
+            .navigationDestination(for: MediaItemRef.self) { item in
                 LibraryDetailView(item: item)
             }
         }
@@ -415,7 +575,7 @@ struct LibraryBrowseRow: View {
     @EnvironmentObject private var model: AppModel
 
     let title: String
-    let items: [SearchHit]
+    let items: [MediaItemRef]
     let tint: Color
 
     var body: some View {
@@ -436,26 +596,27 @@ struct LibraryBrowseRow: View {
     }
 
     @ViewBuilder
-    private func browseItem(_ item: SearchHit) -> some View {
-        switch item {
-        case .song:
+    private func browseItem(_ item: MediaItemRef) -> some View {
+        if item.kind == .song {
             Button {
                 Task { await model.play(item) }
             } label: {
                 LibraryBrowseCard(item: item, tint: tint)
             }
             .buttonStyle(.plain)
-        case .album, .playlist, .artist:
+        } else if item.kind == .album || item.kind == .playlist || item.kind == .artist {
             NavigationLink(value: item) {
                 LibraryBrowseCard(item: item, tint: tint)
             }
             .buttonStyle(.plain)
+        } else {
+            EmptyView()
         }
     }
 }
 
 struct LibraryBrowseCard: View {
-    let item: SearchHit
+    let item: MediaItemRef
     let tint: Color
 
     var body: some View {
@@ -483,19 +644,27 @@ struct LibraryBrowseCard: View {
 }
 
 struct LibraryDetailView: View {
-    let item: SearchHit
+    let item: MediaItemRef
 
     @ViewBuilder
     var body: some View {
-        switch item {
-        case .song(let song, let source):
-            SongDetailView(song: song, source: source.mediaSource)
-        case .album(let album, let source):
-            AlbumDetailView(album: album, source: source.mediaSource)
-        case .playlist(let playlist, let source):
-            PlaylistDetailView(playlist: playlist, source: source.mediaSource)
-        case .artist(let artist, let source):
-            ArtistDetailView(artist: artist, source: source.mediaSource)
+        switch item.kind {
+        case .song:
+            MediaItemActionList(items: [item])
+                .padding(24)
+                .navigationTitle(item.title)
+        case .album:
+            AlbumDetailView(item: item)
+        case .playlist:
+            PlaylistDetailView(item: item)
+        case .artist:
+            ArtistDetailView(item: item)
+        case .musicVideo:
+            ContentUnavailableView(
+                "Unsupported Item",
+                systemImage: item.symbolName,
+                description: Text("Music videos are not part of the library browser yet.")
+            )
         }
     }
 }
@@ -503,9 +672,8 @@ struct LibraryDetailView: View {
 struct AlbumDetailView: View {
     @EnvironmentObject private var model: AppModel
 
-    let album: Album
-    let source: MediaSource
-    @State private var tracks: [Track] = []
+    let item: MediaItemRef
+    @State private var tracks: [MediaItemRef] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -513,16 +681,16 @@ struct AlbumDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 detailHeader(
-                    title: album.title,
-                    subtitle: album.artistName,
-                    artworkURL: album.artwork?.url(width: 240, height: 240),
-                    symbolName: "square.stack"
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    artworkURL: item.artworkURL,
+                    symbolName: item.symbolName
                 )
                 trackContent
             }
             .padding(24)
         }
-        .navigationTitle(album.title)
+        .navigationTitle(item.title)
         .task { await loadTracks() }
     }
 
@@ -544,7 +712,7 @@ struct AlbumDetailView: View {
                 description: Text("Apple Music did not return tracks for this album.")
             )
         } else {
-            TrackActionList(tracks: tracks, source: source)
+            MediaItemActionList(items: tracks)
         }
     }
 
@@ -554,10 +722,9 @@ struct AlbumDetailView: View {
         defer { isLoading = false }
 
         do {
-            let detailedAlbum = try await album.with(.tracks)
-            tracks = Array(detailedAlbum.tracks ?? [])
+            tracks = try await model.loadTracks(for: item)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = AppError.from(error).userFacingMessage
         }
     }
 }
@@ -565,9 +732,8 @@ struct AlbumDetailView: View {
 struct PlaylistDetailView: View {
     @EnvironmentObject private var model: AppModel
 
-    let playlist: Playlist
-    let source: MediaSource
-    @State private var tracks: [Track] = []
+    let item: MediaItemRef
+    @State private var tracks: [MediaItemRef] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -575,16 +741,16 @@ struct PlaylistDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 detailHeader(
-                    title: playlist.name,
-                    subtitle: playlist.curatorName ?? "Playlist",
-                    artworkURL: playlist.artwork?.url(width: 240, height: 240),
-                    symbolName: "music.note.list"
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    artworkURL: item.artworkURL,
+                    symbolName: item.symbolName
                 )
                 trackContent
             }
             .padding(24)
         }
-        .navigationTitle(playlist.name)
+        .navigationTitle(item.title)
         .task { await loadTracks() }
     }
 
@@ -606,7 +772,7 @@ struct PlaylistDetailView: View {
                 description: Text("Apple Music did not return tracks for this playlist.")
             )
         } else {
-            TrackActionList(tracks: tracks, source: source)
+            MediaItemActionList(items: tracks)
         }
     }
 
@@ -616,19 +782,19 @@ struct PlaylistDetailView: View {
         defer { isLoading = false }
 
         do {
-            let detailedPlaylist = try await playlist.with(.tracks)
-            tracks = Array(detailedPlaylist.tracks ?? [])
+            tracks = try await model.loadTracks(for: item)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = AppError.from(error).userFacingMessage
         }
     }
 }
 
 struct ArtistDetailView: View {
-    let artist: Artist
-    let source: MediaSource
-    @State private var albums: [Album] = []
-    @State private var topSongs: [Song] = []
+    @EnvironmentObject private var model: AppModel
+
+    let item: MediaItemRef
+    @State private var albums: [MediaItemRef] = []
+    @State private var topSongs: [MediaItemRef] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -636,10 +802,10 @@ struct ArtistDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 detailHeader(
-                    title: artist.name,
-                    subtitle: artist.genreNames?.joined(separator: ", ") ?? "Artist",
-                    artworkURL: artist.artwork?.url(width: 240, height: 240),
-                    symbolName: "person.crop.circle"
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    artworkURL: item.artworkURL,
+                    symbolName: item.symbolName
                 )
 
                 if isLoading {
@@ -658,11 +824,8 @@ struct ArtistDetailView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(alignment: .top, spacing: 12) {
                                 ForEach(albums) { album in
-                                    NavigationLink(value: SearchHit.album(album, source: .catalog)) {
-                                        LibraryBrowseCard(
-                                            item: .album(album, source: .catalog),
-                                            tint: .purple
-                                        )
+                                    NavigationLink(value: album) {
+                                        LibraryBrowseCard(item: album, tint: .purple)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -674,7 +837,7 @@ struct ArtistDetailView: View {
                         Text("Top Songs")
                             .font(.title3.bold())
                             .padding(.top, 4)
-                        TrackActionList(tracks: topSongs.map(Track.song), source: source)
+                        MediaItemActionList(items: topSongs)
                     }
 
                     if albums.isEmpty && topSongs.isEmpty {
@@ -688,7 +851,7 @@ struct ArtistDetailView: View {
             }
             .padding(24)
         }
-        .navigationTitle(artist.name)
+        .navigationTitle(item.title)
         .task { await loadArtist() }
     }
 
@@ -698,45 +861,34 @@ struct ArtistDetailView: View {
         defer { isLoading = false }
 
         do {
-            let detailedArtist = try await artist.with([.albums, .topSongs])
-            albums = Array(detailedArtist.albums ?? [])
-            topSongs = Array(detailedArtist.topSongs ?? [])
+            let content = try await model.loadArtistContent(for: item)
+            albums = content.albums
+            topSongs = content.topSongs
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = AppError.from(error).userFacingMessage
         }
     }
 }
 
-struct SongDetailView: View {
-    let song: Song
-    let source: MediaSource
+struct MediaItemActionList: View {
+    @EnvironmentObject private var model: AppModel
 
-    var body: some View {
-        TrackActionList(tracks: [.song(song)], source: source)
-            .padding(24)
-            .navigationTitle(song.title)
-    }
-}
-
-struct TrackActionList: View {
-    let tracks: [Track]
-    let source: MediaSource
+    let items: [MediaItemRef]
 
     var body: some View {
         VStack(spacing: 8) {
-            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                TrackActionRow(index: index + 1, track: track, source: source)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                MediaItemActionRow(index: index + 1, item: item)
             }
         }
     }
 }
 
-struct TrackActionRow: View {
+struct MediaItemActionRow: View {
     @EnvironmentObject private var model: AppModel
 
     let index: Int
-    let track: Track
-    let source: MediaSource
+    let item: MediaItemRef
 
     var body: some View {
         HStack(spacing: 12) {
@@ -744,12 +896,12 @@ struct TrackActionRow: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 26, alignment: .trailing)
-            ArtworkThumbnail(url: track.artwork?.url(width: 80, height: 80), size: 48, symbolName: "music.note")
+            ArtworkThumbnail(url: item.artworkURL, size: 48, symbolName: item.symbolName)
             VStack(alignment: .leading, spacing: 3) {
-                Text(track.title)
+                Text(item.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(track.artistName)
+                Text(item.subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -757,13 +909,15 @@ struct TrackActionRow: View {
             Spacer()
             Menu {
                 Button("Play Now", systemImage: "play.fill") {
-                    Task { await model.play(track, source: source) }
+                    Task { await model.play(item) }
                 }
-                Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                    Task { await model.playNext(track, source: source) }
-                }
-                Button("Add to Queue", systemImage: "text.badge.plus") {
-                    Task { await model.addToQueue(track, source: source) }
+                if item.isPlayable {
+                    Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                        Task { await model.playNext(item) }
+                    }
+                    Button("Add to Queue", systemImage: "text.badge.plus") {
+                        Task { await model.addToQueue(item) }
+                    }
                 }
             } label: {
                 Label("Track actions", systemImage: "ellipsis.circle")
@@ -973,6 +1127,7 @@ struct SettingsView: View {
                 musicAccessSection
                 themeSection
                 homeSectionConfiguration
+                configurableHomeSectionConfiguration
                 playbackSection
             }
             .padding(24)
@@ -1120,6 +1275,108 @@ struct SettingsView: View {
         .background(cardBackground(accent: model.theme.accent.opacity(0.12)))
     }
 
+    private var configurableHomeSectionConfiguration: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Music Home Sections")
+                .font(.headline)
+
+            Text("Choose which library and Apple Music sections appear on Home, then tune their order, layout, item count, and artwork shape.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 10) {
+                ForEach(Array(model.configurableHomeSections.enumerated()), id: \.element.id) { index, section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 12) {
+                            Toggle(isOn: Binding(
+                                get: { section.isEnabled },
+                                set: { enabled in
+                                    model.setConfigurableHomeSectionEnabled(section.id, enabled: enabled)
+                                }
+                            )) {
+                                Text(section.title)
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .toggleStyle(.switch)
+
+                            Spacer()
+
+                            Button {
+                                guard index > 0 else { return }
+                                model.moveConfigurableHomeSection(from: IndexSet(integer: index), to: index - 1)
+                            } label: {
+                                Image(systemName: "arrow.up")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(index == 0)
+
+                            Button {
+                                guard index < model.configurableHomeSections.count - 1 else { return }
+                                model.moveConfigurableHomeSection(from: IndexSet(integer: index), to: index + 2)
+                            } label: {
+                                Image(systemName: "arrow.down")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(index == model.configurableHomeSections.count - 1)
+                        }
+
+                        HStack(spacing: 16) {
+                            Picker("Layout", selection: Binding(
+                                get: { section.layout.choice },
+                                set: { choice in
+                                    let layout: HomeSectionLayout = switch choice {
+                                    case .carousel:
+                                        .carousel(rows: 1)
+                                    case .grid:
+                                        .grid(columns: 4)
+                                    case .list:
+                                        .list
+                                    }
+                                    model.updateConfigurableHomeSection(section.id, layout: layout)
+                                }
+                            )) {
+                                ForEach(HomeSectionLayoutChoice.allCases) { choice in
+                                    Text(choice.title).tag(choice)
+                                }
+                            }
+                            .frame(width: 180)
+
+                            Stepper(
+                                "Items: \(section.itemLimit)",
+                                value: Binding(
+                                    get: { section.itemLimit },
+                                    set: { limit in
+                                        model.updateConfigurableHomeSection(section.id, itemLimit: limit)
+                                    }
+                                ),
+                                in: 4...40,
+                                step: 4
+                            )
+
+                            Picker("Artwork", selection: Binding(
+                                get: { section.artworkShape },
+                                set: { shape in
+                                    model.updateConfigurableHomeSection(section.id, artworkShape: shape)
+                                }
+                            )) {
+                                ForEach(HomeArtworkShape.allCases, id: \.self) { shape in
+                                    Text(shape.rawValue.capitalized).tag(shape)
+                                }
+                            }
+                            .frame(width: 140)
+                        }
+                        .pickerStyle(.menu)
+                        .disabled(!section.isEnabled)
+                    }
+                    .padding(12)
+                    .background(cardBackground(accent: model.theme.accent.opacity(0.08)))
+                }
+            }
+        }
+        .padding(18)
+        .background(cardBackground(accent: model.theme.accent.opacity(0.12)))
+    }
+
     private var playbackSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Playback Defaults")
@@ -1151,7 +1408,7 @@ struct SettingsView: View {
 
 struct SearchResultSection: View {
     let title: String
-    let items: [SearchHit]
+    let items: [MediaItemRef]
     let tint: Color
 
     var body: some View {
@@ -1171,7 +1428,7 @@ struct SearchResultSection: View {
 
 struct SearchResultCard: View {
     @EnvironmentObject private var model: AppModel
-    let item: SearchHit
+    let item: MediaItemRef
     let tint: Color
 
     var body: some View {
@@ -1240,16 +1497,18 @@ struct ArtworkThumbnail: View {
     let url: URL?
     let size: CGFloat
     let symbolName: String
+    let shape: HomeArtworkShape
 
-    init(url: URL?, size: CGFloat, symbolName: String = "music.note") {
+    init(url: URL?, size: CGFloat, symbolName: String = "music.note", shape: HomeArtworkShape = .rounded) {
         self.url = url
         self.size = size
         self.symbolName = symbolName
+        self.shape = shape
     }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            artworkPath
                 .fill(
                     LinearGradient(
                         colors: [
@@ -1276,13 +1535,25 @@ struct ArtworkThumbnail: View {
                         fallbackGlyph
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(artworkPath)
             } else {
                 fallbackGlyph
             }
         }
         .frame(width: size, height: size)
+        .clipShape(artworkPath)
         .clipped()
+    }
+
+    private var artworkPath: AnyShape {
+        switch shape {
+        case .square:
+            AnyShape(Rectangle())
+        case .rounded:
+            AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case .circle:
+            AnyShape(Circle())
+        }
     }
 
     private var fallbackGlyph: some View {

@@ -14,6 +14,17 @@ enum MediaSource: String, Codable, Hashable, Sendable {
     case catalog
     case library
     case local
+
+    var label: String {
+        switch self {
+        case .catalog:
+            "Apple Music"
+        case .library:
+            "Library"
+        case .local:
+            "Local"
+        }
+    }
 }
 
 struct MediaItemRef: Codable, Hashable, Identifiable, Sendable {
@@ -38,6 +49,40 @@ struct MediaItemRef: Codable, Hashable, Identifiable, Sendable {
         self.subtitle = subtitle
         self.artworkURL = artworkURL
         self.source = source
+    }
+
+    var symbolName: String {
+        switch kind {
+        case .song:
+            "music.note"
+        case .album:
+            "square.stack"
+        case .playlist:
+            "music.note.list"
+        case .artist:
+            "person.crop.square"
+        case .musicVideo:
+            "play.rectangle"
+        }
+    }
+
+    var playableDescription: String {
+        switch kind {
+        case .song:
+            "Song"
+        case .album:
+            "Album"
+        case .playlist:
+            "Playlist"
+        case .artist:
+            "Artist"
+        case .musicVideo:
+            "Music Video"
+        }
+    }
+
+    var isPlayable: Bool {
+        kind == .song || kind == .album || kind == .playlist
     }
 }
 
