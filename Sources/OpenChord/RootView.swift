@@ -39,6 +39,9 @@ struct RootView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.24), value: model.selectedSection)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PlayerBarView()
+            }
         }
         .preferredColorScheme(model.theme.preferredColorScheme)
     }

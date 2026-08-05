@@ -65,6 +65,7 @@ final class AppModel: ObservableObject {
             statusText: String(describing: player.state.playbackStatus).capitalized,
             currentTitle: player.queue.currentEntry?.title ?? "Nothing playing",
             currentArtist: player.queue.currentEntry?.subtitle ?? "Connect Apple Music",
+            currentArtworkURL: player.queue.currentEntry?.artwork?.url(width: 160, height: 160),
             entries: entries
         )
     }
@@ -149,6 +150,24 @@ final class AppModel: ObservableObject {
 
     func addToQueue(_ hit: SearchHit) async {
         await queue(hit, position: .tail)
+    }
+
+    func play(_ track: Track) async {
+        do {
+            player.queue = [track]
+            try await player.play()
+            await refreshPlaybackSnapshot()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func playNext(_ track: Track) async {
+        await queue(track, position: .afterCurrentEntry)
+    }
+
+    func addToQueue(_ track: Track) async {
+        await queue(track, position: .tail)
     }
 
     func clearRecentSearches() {
@@ -292,6 +311,15 @@ final class AppModel: ObservableObject {
                 await performCatalogSearch()
                 return
             }
+            await refreshPlaybackSnapshot()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func queue(_ track: Track, position: MusicPlayer.Queue.EntryInsertionPosition) async {
+        do {
+            try await player.queue.insert(track, position: position)
             await refreshPlaybackSnapshot()
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -561,6 +589,7 @@ struct QueueSnapshot {
     var statusText = "Stopped"
     var currentTitle = "Nothing playing"
     var currentArtist = "Connect Apple Music"
+    var currentArtworkURL: URL? = nil
     var entries: [QueueEntrySnapshot] = []
 }
 

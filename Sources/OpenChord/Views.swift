@@ -309,13 +309,73 @@ struct LibraryView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                resultSections
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    libraryBrowse
+                    header
+                    resultSections
+                }
+                .padding(24)
             }
-            .padding(24)
+            .navigationTitle("Library")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await model.loadLibraryBrowse() }
+                    } label: {
+                        Label("Refresh Library", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+            .task {
+                if model.libraryBrowse.totalCount == 0 && !model.libraryBrowse.isLoading {
+                    await model.loadLibraryBrowse()
+                }
+            }
+            .navigationDestination(for: SearchHit.self) { item in
+                LibraryDetailView(item: item)
+            }
         }
+    }
+
+    private var libraryBrowse: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Browse Library")
+                        .font(.title2.bold())
+                    Text("Your saved music, ready to play.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("Downloaded only", isOn: Binding(
+                    get: { model.libraryBrowseDownloadedOnly },
+                    set: { model.setLibraryBrowseDownloadedOnly($0) }
+                ))
+                .toggleStyle(.checkbox)
+            }
+
+            if model.libraryBrowse.isLoading {
+                ProgressView("Loading library…")
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            } else if model.libraryBrowse.totalCount == 0 {
+                ContentUnavailableView(
+                    "No Library Items",
+                    systemImage: "music.note.list",
+                    description: Text("Authorize Apple Music and add some music to your library, then refresh.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 140)
+            } else {
+                LibraryBrowseRow(title: "Songs", items: model.libraryBrowse.songs, tint: .pink)
+                LibraryBrowseRow(title: "Albums", items: model.libraryBrowse.albums, tint: .purple)
+                LibraryBrowseRow(title: "Playlists", items: model.libraryBrowse.playlists, tint: .blue)
+                LibraryBrowseRow(title: "Artists", items: model.libraryBrowse.artists, tint: .orange)
+            }
+        }
+        .padding(18)
+        .background(cardBackground(accent: model.theme.accent.opacity(0.16)))
     }
 
     private var header: some View {
@@ -348,6 +408,442 @@ struct LibraryView: View {
         }
         .padding(18)
         .background(cardBackground(accent: Color.blue.opacity(0.12)))
+    }
+}
+
+struct LibraryBrowseRow: View {
+    @EnvironmentObject private var model: AppModel
+
+    let title: String
+    let items: [SearchHit]
+    let tint: Color
+
+    var body: some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.headline)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(items) { item in
+                            browseItem(item)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func browseItem(_ item: SearchHit) -> some View {
+        switch item {
+        case .song:
+            Button {
+                Task { await model.play(item) }
+            } label: {
+                LibraryBrowseCard(item: item, tint: tint)
+            }
+            .buttonStyle(.plain)
+        case .album, .playlist, .artist:
+            NavigationLink(value: item) {
+                LibraryBrowseCard(item: item, tint: tint)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+struct LibraryBrowseCard: View {
+    let item: SearchHit
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ArtworkThumbnail(url: item.artworkURL, size: 132, symbolName: item.symbolName)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: item.symbolName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(7)
+                        .background(tint.opacity(0.85), in: Circle())
+                        .padding(7)
+                }
+
+            Text(item.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            Text(item.subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(width: 132, alignment: .leading)
+    }
+}
+
+struct LibraryDetailView: View {
+    let item: SearchHit
+
+    @ViewBuilder
+    var body: some View {
+        switch item {
+        case .song(let song, _):
+            SongDetailView(song: song)
+        case .album(let album, _):
+            AlbumDetailView(album: album)
+        case .playlist(let playlist, _):
+            PlaylistDetailView(playlist: playlist)
+        case .artist(let artist, _):
+            ArtistDetailView(artist: artist)
+        }
+    }
+}
+
+struct AlbumDetailView: View {
+    @EnvironmentObject private var model: AppModel
+
+    let album: Album
+    @State private var tracks: [Track] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                detailHeader(
+                    title: album.title,
+                    subtitle: album.artistName,
+                    artworkURL: album.artwork?.url(width: 240, height: 240),
+                    symbolName: "square.stack"
+                )
+                trackContent
+            }
+            .padding(24)
+        }
+        .navigationTitle(album.title)
+        .task { await loadTracks() }
+    }
+
+    @ViewBuilder
+    private var trackContent: some View {
+        if isLoading {
+            ProgressView("Loading tracks…")
+                .frame(maxWidth: .infinity, minHeight: 140)
+        } else if let errorMessage {
+            ContentUnavailableView(
+                "Unable to Load Album",
+                systemImage: "exclamationmark.triangle",
+                description: Text(errorMessage)
+            )
+        } else if tracks.isEmpty {
+            ContentUnavailableView(
+                "No Tracks",
+                systemImage: "music.note",
+                description: Text("Apple Music did not return tracks for this album.")
+            )
+        } else {
+            TrackActionList(tracks: tracks)
+        }
+    }
+
+    private func loadTracks() async {
+        guard tracks.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let detailedAlbum = try await album.with(.tracks)
+            tracks = Array(detailedAlbum.tracks ?? [])
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct PlaylistDetailView: View {
+    @EnvironmentObject private var model: AppModel
+
+    let playlist: Playlist
+    @State private var tracks: [Track] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                detailHeader(
+                    title: playlist.name,
+                    subtitle: playlist.curatorName ?? "Playlist",
+                    artworkURL: playlist.artwork?.url(width: 240, height: 240),
+                    symbolName: "music.note.list"
+                )
+                trackContent
+            }
+            .padding(24)
+        }
+        .navigationTitle(playlist.name)
+        .task { await loadTracks() }
+    }
+
+    @ViewBuilder
+    private var trackContent: some View {
+        if isLoading {
+            ProgressView("Loading tracks…")
+                .frame(maxWidth: .infinity, minHeight: 140)
+        } else if let errorMessage {
+            ContentUnavailableView(
+                "Unable to Load Playlist",
+                systemImage: "exclamationmark.triangle",
+                description: Text(errorMessage)
+            )
+        } else if tracks.isEmpty {
+            ContentUnavailableView(
+                "No Tracks",
+                systemImage: "music.note",
+                description: Text("Apple Music did not return tracks for this playlist.")
+            )
+        } else {
+            TrackActionList(tracks: tracks)
+        }
+    }
+
+    private func loadTracks() async {
+        guard tracks.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let detailedPlaylist = try await playlist.with(.tracks)
+            tracks = Array(detailedPlaylist.tracks ?? [])
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct ArtistDetailView: View {
+    let artist: Artist
+    @State private var albums: [Album] = []
+    @State private var topSongs: [Song] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                detailHeader(
+                    title: artist.name,
+                    subtitle: artist.genreNames?.joined(separator: ", ") ?? "Artist",
+                    artworkURL: artist.artwork?.url(width: 240, height: 240),
+                    symbolName: "person.crop.circle"
+                )
+
+                if isLoading {
+                    ProgressView("Loading artist…")
+                        .frame(maxWidth: .infinity, minHeight: 140)
+                } else if let errorMessage {
+                    ContentUnavailableView(
+                        "Unable to Load Artist",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(errorMessage)
+                    )
+                } else {
+                    if !albums.isEmpty {
+                        Text("Albums")
+                            .font(.title3.bold())
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(alignment: .top, spacing: 12) {
+                                ForEach(albums) { album in
+                                    NavigationLink(value: SearchHit.album(album, source: .catalog)) {
+                                        LibraryBrowseCard(
+                                            item: .album(album, source: .catalog),
+                                            tint: .purple
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+
+                    if !topSongs.isEmpty {
+                        Text("Top Songs")
+                            .font(.title3.bold())
+                            .padding(.top, 4)
+                        TrackActionList(tracks: topSongs.map(Track.song))
+                    }
+
+                    if albums.isEmpty && topSongs.isEmpty {
+                        ContentUnavailableView(
+                            "No Artist Content",
+                            systemImage: "person.crop.circle",
+                            description: Text("Apple Music did not return albums or top songs for this artist.")
+                        )
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .navigationTitle(artist.name)
+        .task { await loadArtist() }
+    }
+
+    private func loadArtist() async {
+        guard albums.isEmpty && topSongs.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let detailedArtist = try await artist.with([.albums, .topSongs])
+            albums = Array(detailedArtist.albums ?? [])
+            topSongs = Array(detailedArtist.topSongs ?? [])
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct SongDetailView: View {
+    let song: Song
+
+    var body: some View {
+        TrackActionList(tracks: [.song(song)])
+            .padding(24)
+            .navigationTitle(song.title)
+    }
+}
+
+struct TrackActionList: View {
+    let tracks: [Track]
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                TrackActionRow(index: index + 1, track: track)
+            }
+        }
+    }
+}
+
+struct TrackActionRow: View {
+    @EnvironmentObject private var model: AppModel
+
+    let index: Int
+    let track: Track
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(index)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 26, alignment: .trailing)
+            ArtworkThumbnail(url: track.artwork?.url(width: 80, height: 80), size: 48, symbolName: "music.note")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(track.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(track.artistName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Menu {
+                Button("Play Now", systemImage: "play.fill") {
+                    Task { await model.play(track) }
+                }
+                Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                    Task { await model.playNext(track) }
+                }
+                Button("Add to Queue", systemImage: "text.badge.plus") {
+                    Task { await model.addToQueue(track) }
+                }
+            } label: {
+                Label("Track actions", systemImage: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+        }
+        .padding(10)
+        .background(cardBackground(accent: Color.white.opacity(0.06)))
+    }
+}
+
+@MainActor
+@ViewBuilder
+private func detailHeader(title: String, subtitle: String, artworkURL: URL?, symbolName: String) -> some View {
+    HStack(alignment: .top, spacing: 18) {
+        ArtworkThumbnail(url: artworkURL, size: 160, symbolName: symbolName)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+            Text(subtitle)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        Spacer()
+    }
+    .padding(18)
+    .background(cardBackground(accent: Color.white.opacity(0.08)))
+}
+
+struct PlayerBarView: View {
+    @EnvironmentObject private var model: AppModel
+
+    private var isPlaying: Bool {
+        model.queueSnapshot.statusText.caseInsensitiveCompare("Playing") == .orderedSame
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ArtworkThumbnail(
+                url: model.queueSnapshot.currentArtworkURL,
+                size: 44,
+                symbolName: "music.note"
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.queueSnapshot.currentTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(model.queueSnapshot.currentArtist)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 16) {
+                Button {
+                    Task { await model.skipPrevious() }
+                } label: {
+                    Image(systemName: "backward.fill")
+                }
+                .help("Previous track")
+
+                Button {
+                    Task { await model.playPause() }
+                } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .font(.headline)
+                }
+                .help(isPlaying ? "Pause" : "Play")
+
+                Button {
+                    Task { await model.skipNext() }
+                } label: {
+                    Image(systemName: "forward.fill")
+                }
+                .help("Next track")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Divider()
+        }
     }
 }
 
@@ -679,6 +1175,13 @@ struct SearchResultCard: View {
 struct ArtworkThumbnail: View {
     let url: URL?
     let size: CGFloat
+    let symbolName: String
+
+    init(url: URL?, size: CGFloat, symbolName: String = "music.note") {
+        self.url = url
+        self.size = size
+        self.symbolName = symbolName
+    }
 
     var body: some View {
         ZStack {
@@ -719,7 +1222,7 @@ struct ArtworkThumbnail: View {
     }
 
     private var fallbackGlyph: some View {
-        Image(systemName: "music.note")
+        Image(systemName: symbolName)
             .font(.system(size: size * 0.28, weight: .semibold))
             .foregroundStyle(.secondary)
     }
