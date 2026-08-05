@@ -3,25 +3,40 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $model.selectedSection) {
-                ForEach(AppSection.allCases) { section in
-                    Label(section.title, systemImage: section.symbolName)
-                        .tag(section)
-                }
-            }
-            .navigationTitle("OpenChord")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            VStack(spacing: 0) {
+                HStack(spacing: 9) {
+                    Image(systemName: "music.note.list")
+                        .foregroundStyle(model.theme.accent)
+                    Text("OpenChord")
+                        .font(.headline)
+                    Spacer()
                     Button {
-                        Task { await model.refreshAll() }
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            columnVisibility = .detailOnly
+                        }
                     } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
+                        Image(systemName: "sidebar.left")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Collapse sidebar")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                Divider()
+
+                List(selection: $model.selectedSection) {
+                    ForEach(AppSection.allCases) { section in
+                        Label(section.title, systemImage: section.symbolName)
+                            .tag(section)
                     }
                 }
             }
+            .toolbar(.hidden, for: .windowToolbar)
         } detail: {
             ZStack {
                 themeBackdrop
@@ -41,6 +56,23 @@ struct RootView: View {
             .animation(.easeInOut(duration: 0.24), value: model.selectedSection)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBarView()
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if columnVisibility == .detailOnly {
+                HStack {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            columnVisibility = .all
+                        }
+                    } label: {
+                        Label("Show Sidebar", systemImage: "sidebar.left")
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
             }
         }
         .preferredColorScheme(model.theme.preferredColorScheme)

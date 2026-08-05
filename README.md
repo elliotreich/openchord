@@ -11,10 +11,12 @@ OpenChord is a clean-room macOS Apple Music companion built with SwiftUI and Mus
 - **Library Browse** — Browse downloaded songs, albums, playlists, and artists
 - **Configurable Music Home** — Independently loading library/chart sections with persisted order, layout, item limit, and artwork shape
 - **Detail Screens** — Album and playlist tracks plus artist albums/top songs with play and queue actions
-- **Customizable Dashboard** — Reorder/configure Spotlight, Quick Actions, Queue Peek, Library Snapshot, and Status cards
+- **Customizable Dashboard** — Normalize and drag-reorder Spotlight, Quick Actions, Queue Peek, Library Snapshot, and Status cards; the order persists locally
 - **Themes** — Midnight (dark), Paper (light), Ember (dark) with custom gradients
 - **Recent Searches** — Quick access to previous search terms
 - **Authorization** — Handles MusicKit authorization flow
+- **Original App Icon** — The source SVG and packaged macOS ICNS are included under Resources/
+- **Artwork Loading** — MusicKit artwork is rendered through Apple’s native `ArtworkImage` view, including local macOS library artwork
 
 ## Requirements
 
@@ -41,6 +43,8 @@ swift run OpenChord
 bash package-app.sh
 open dist/OpenChord.app
 ```
+
+The packaged app includes the original OpenChord icon from Resources/OpenChordIcon.svg and Resources/OpenChord.icns. On Home, drag a card by its handle and drop it on the upper or lower half of another card to place it before or after that card.
 
 The local package is ad-hoc signed for smoke testing. It is not a notarized release; sign it with your own team before distributing it to other users.
 

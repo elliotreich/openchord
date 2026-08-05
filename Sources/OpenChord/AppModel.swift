@@ -74,14 +74,18 @@ final class AppModel: ObservableObject {
         queueSnapshot = QueueSnapshot(
             statusText: state.status.rawValue.capitalized,
             currentTitle: state.currentItem?.title ?? "Nothing playing",
-            currentArtist: state.currentItem?.subtitle.isEmpty == false ? state.currentItem?.subtitle ?? "" : "Connect Apple Music",
+            currentArtist: state.currentItem?.subtitle.isEmpty == false
+                ? state.currentItem?.subtitle ?? ""
+                : (authorizationStatus == .authorized ? "Choose something to play" : "Authorize Apple Music"),
             currentArtworkURL: state.currentItem?.artworkURL,
+            currentArtwork: state.currentItem?.artwork,
             entries: state.queue.map { item in
                 QueueEntrySnapshot(
                     id: item.id,
                     title: item.title,
                     subtitle: item.subtitle,
-                    artworkURL: item.artworkURL
+                    artworkURL: item.artworkURL,
+                    artwork: item.artwork
                 )
             }
         )
@@ -252,6 +256,22 @@ final class AppModel: ObservableObject {
 
     func moveHomeSection(from offsets: IndexSet, to destination: Int) {
         homeSections.move(fromOffsets: offsets, toOffset: destination)
+        persistSettings()
+    }
+
+    func moveHomeSection(_ source: HomeSectionKind, relativeTo destination: HomeSectionKind, placeAfter: Bool) {
+        guard source != destination,
+              let sourceIndex = homeSections.firstIndex(of: source),
+              let destinationIndex = homeSections.firstIndex(of: destination) else {
+            return
+        }
+
+        let movedSection = homeSections.remove(at: sourceIndex)
+        var insertionIndex = sourceIndex < destinationIndex ? destinationIndex - 1 : destinationIndex
+        if placeAfter {
+            insertionIndex += 1
+        }
+        homeSections.insert(movedSection, at: insertionIndex)
         persistSettings()
     }
 
@@ -569,8 +589,9 @@ struct SearchResults {
 struct QueueSnapshot {
     var statusText = "Stopped"
     var currentTitle = "Nothing playing"
-    var currentArtist = "Connect Apple Music"
+    var currentArtist = "Authorize Apple Music"
     var currentArtworkURL: URL? = nil
+    var currentArtwork: Artwork? = nil
     var entries: [QueueEntrySnapshot] = []
 }
 
@@ -593,6 +614,7 @@ struct QueueEntrySnapshot: Identifiable, Hashable {
     let title: String
     let subtitle: String
     let artworkURL: URL?
+    let artwork: Artwork?
 }
 
 enum AppSection: String, CaseIterable, Identifiable, Codable {

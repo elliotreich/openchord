@@ -16,6 +16,7 @@ swift build --package-path "$ROOT_DIR"
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/OpenChord"
+cp "$ROOT_DIR/Resources/OpenChord.icns" "$RESOURCES_DIR/OpenChord.icns"
 chmod +x "$MACOS_DIR/OpenChord"
 
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
@@ -31,6 +32,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
     <string>OpenChord</string>
     <key>CFBundleDisplayName</key>
     <string>OpenChord</string>
+    <key>CFBundleIconFile</key>
+    <string>OpenChord.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

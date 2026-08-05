@@ -203,6 +203,7 @@ final class MusicKitPlaybackService: PlaybackService {
                 title: entry.title,
                 subtitle: entry.subtitle ?? "",
                 artworkURL: entry.artwork?.url(width: 480, height: 480),
+                artwork: song.artwork ?? entry.artwork,
                 source: .catalog
             )
         case .musicVideo(let musicVideo):
@@ -212,6 +213,7 @@ final class MusicKitPlaybackService: PlaybackService {
                 title: entry.title,
                 subtitle: entry.subtitle ?? "",
                 artworkURL: entry.artwork?.url(width: 480, height: 480),
+                artwork: musicVideo.artwork ?? entry.artwork,
                 source: .catalog
             )
         case nil:
@@ -228,6 +230,7 @@ final class MusicKitPlaybackService: PlaybackService {
             title: entry.title,
             subtitle: entry.subtitle ?? "",
             artworkURL: entry.artwork?.url(width: 480, height: 480),
+            artwork: entry.artwork,
             source: .catalog
         )
     }

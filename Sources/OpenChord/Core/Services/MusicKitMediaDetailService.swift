@@ -36,6 +36,7 @@ final class MusicKitMediaDetailService: MediaDetailService {
                 title: album.title,
                 subtitle: album.artistName,
                 artworkURL: album.artwork?.url(width: 480, height: 480),
+                artwork: album.artwork,
                 source: item.source
             )
         }
@@ -46,6 +47,7 @@ final class MusicKitMediaDetailService: MediaDetailService {
                 title: song.title,
                 subtitle: song.artistName,
                 artworkURL: song.artwork?.url(width: 480, height: 480),
+                artwork: song.artwork,
                 source: item.source
             )
         }
@@ -127,6 +129,7 @@ final class MusicKitMediaDetailService: MediaDetailService {
                 title: song.title,
                 subtitle: song.artistName,
                 artworkURL: song.artwork?.url(width: 480, height: 480),
+                artwork: song.artwork,
                 source: source
             )
         case .musicVideo(let musicVideo):
@@ -136,6 +139,7 @@ final class MusicKitMediaDetailService: MediaDetailService {
                 title: musicVideo.title,
                 subtitle: musicVideo.artistName,
                 artworkURL: musicVideo.artwork?.url(width: 480, height: 480),
+                artwork: musicVideo.artwork,
                 source: source
             )
         @unknown default:
@@ -145,6 +149,7 @@ final class MusicKitMediaDetailService: MediaDetailService {
                 title: track.title,
                 subtitle: track.artistName,
                 artworkURL: track.artwork?.url(width: 480, height: 480),
+                artwork: track.artwork,
                 source: source
             )
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 @preconcurrency import MusicKit
 
 struct HomeView: View {
@@ -11,7 +12,7 @@ struct HomeView: View {
                     heroCard
                     configurableHomeContent
 
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 16)], spacing: 16) {
                         ForEach(model.homeSections) { section in
                             homeSectionCard(section)
                         }
@@ -26,7 +27,7 @@ struct HomeView: View {
     }
 
     private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        HStack(alignment: .top, spacing: 20) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("OpenChord")
@@ -40,19 +41,14 @@ struct HomeView: View {
                 statusBadge
             }
 
-            HStack(spacing: 12) {
-                quickAction("Authorize", systemImage: "person.badge.key.fill") {
+            if model.authorizationStatus != .authorized {
+                Button {
                     Task { await model.requestAuthorization() }
+                } label: {
+                    Label("Authorize Apple Music", systemImage: "person.badge.key.fill")
                 }
-                quickAction("Search", systemImage: "magnifyingglass") {
-                    model.selectedSection = .search
-                }
-                quickAction("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                    model.selectedSection = .queue
-                }
-                quickAction("Refresh", systemImage: "arrow.clockwise") {
-                    Task { await model.refreshAll() }
-                }
+                .buttonStyle(.borderedProminent)
+                .tint(model.theme.accent)
             }
         }
         .padding(24)
@@ -60,25 +56,55 @@ struct HomeView: View {
     }
 
     private var statusBadge: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            Text(model.authorizationStatus.description.capitalized)
-                .font(.headline)
-            Text(model.queueSnapshot.statusText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 9) {
+            Circle()
+                .fill(authorizationStatusColor)
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connectionSummary)
+                    .font(.subheadline.weight(.semibold))
+                Text(playbackSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(14)
-        .background(cardBackground(accent: model.theme.accent.opacity(0.18)))
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
+        .background(.white.opacity(0.07), in: Capsule())
     }
 
-    private func quickAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .labelStyle(.titleAndIcon)
-                .frame(maxWidth: .infinity)
+    private var authorizationTitle: String {
+        switch model.authorizationStatus {
+        case .authorized:
+            "Authorized"
+        case .denied:
+            "Access Denied"
+        case .restricted:
+            "Restricted"
+        case .notDetermined:
+            "Needs Authorization"
+        @unknown default:
+            "Unknown"
         }
-        .buttonStyle(.borderedProminent)
-        .tint(model.theme.accent)
+    }
+
+    private var connectionSummary: String {
+        model.authorizationStatus == .authorized ? "Apple Music ready" : authorizationTitle
+    }
+
+    private var playbackSummary: String {
+        switch model.queueSnapshot.statusText.lowercased() {
+        case "playing":
+            "Playing now"
+        case "paused":
+            "Paused"
+        default:
+            "Nothing playing"
+        }
+    }
+
+    private var authorizationStatusColor: Color {
+        model.authorizationStatus == .authorized ? .green : .orange
     }
 
     @ViewBuilder
@@ -101,9 +127,10 @@ struct HomeView: View {
                     Button {
                         Task { await model.loadHomeContent() }
                     } label: {
-                        Label("Refresh Home", systemImage: "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderless)
+                    .help("Refresh Home")
                 }
 
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -120,16 +147,13 @@ struct HomeView: View {
 
     @ViewBuilder
     private func homeSectionCard(_ section: HomeSectionKind) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                Label(section.title, systemImage: section.symbolName)
-                    .font(.headline)
-                Spacer()
+        DashboardSectionCard(
+            section: section,
+            accent: model.theme.accent,
+            onMove: { source, destination, placeAfter in
+                model.moveHomeSection(source, relativeTo: destination, placeAfter: placeAfter)
             }
-            Text(section.subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
+        ) {
             switch section {
             case .spotlight:
                 spotlightContent
@@ -143,9 +167,6 @@ struct HomeView: View {
                 appStatusContent
             }
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground(accent: model.theme.accent.opacity(0.16)))
     }
 
     private var spotlightContent: some View {
@@ -177,7 +198,7 @@ struct HomeView: View {
                     .padding(.top, 4)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
-                    ForEach(Array(model.recentSearches.prefix(6)), id: \.self) { term in
+                    ForEach(Array(model.recentSearches.prefix(4)), id: \.self) { term in
                         presetChip(term, systemImage: "clock.arrow.circlepath")
                     }
                 }
@@ -252,6 +273,72 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
         }
         .font(.subheadline)
+    }
+}
+
+struct DashboardSectionCard<Content: View>: View {
+    let section: HomeSectionKind
+    let accent: Color
+    let onMove: (HomeSectionKind, HomeSectionKind, Bool) -> Void
+    let content: Content
+
+    @State private var isDropTargeted = false
+
+    init(
+        section: HomeSectionKind,
+        accent: Color,
+        onMove: @escaping (HomeSectionKind, HomeSectionKind, Bool) -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.section = section
+        self.accent = accent
+        self.onMove = onMove
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Label(section.title, systemImage: section.symbolName)
+                    .font(.headline)
+                Spacer()
+                Image(systemName: "line.3.horizontal")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .help("Drag to reorder \(section.title)")
+            }
+            .contentShape(Rectangle())
+            .draggable(section.rawValue)
+
+            Text(section.subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            content
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+        .background(cardBackground(accent: accent.opacity(0.16)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(
+                    isDropTargeted ? accent : .clear,
+                    style: StrokeStyle(lineWidth: 2, dash: isDropTargeted ? [7, 5] : [])
+                )
+                .animation(.easeOut(duration: 0.16), value: isDropTargeted)
+        }
+        .dropDestination(for: String.self) { droppedItems, location in
+            guard let rawValue = droppedItems.first,
+                  let source = HomeSectionKind(rawValue: rawValue),
+                  source != section else {
+                return false
+            }
+
+            onMove(source, section, location.y > 140)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+        }
     }
 }
 
@@ -356,6 +443,7 @@ struct ConfigurableHomeItemCard: View {
         VStack(alignment: .leading, spacing: 7) {
             ArtworkThumbnail(
                 url: item.artworkURL,
+                artwork: item.artwork,
                 size: 144,
                 symbolName: item.symbolName,
                 shape: artworkShape
@@ -626,7 +714,7 @@ struct LibraryBrowseCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            ArtworkThumbnail(url: item.artworkURL, size: 132, symbolName: item.symbolName)
+            ArtworkThumbnail(url: item.artworkURL, artwork: item.artwork, size: 132, symbolName: item.symbolName)
                 .overlay(alignment: .bottomTrailing) {
                     Image(systemName: item.symbolName)
                         .font(.caption.weight(.semibold))
@@ -689,6 +777,7 @@ struct AlbumDetailView: View {
                     title: item.title,
                     subtitle: item.subtitle,
                     artworkURL: item.artworkURL,
+                    artwork: item.artwork,
                     symbolName: item.symbolName
                 )
                 trackContent
@@ -749,6 +838,7 @@ struct PlaylistDetailView: View {
                     title: item.title,
                     subtitle: item.subtitle,
                     artworkURL: item.artworkURL,
+                    artwork: item.artwork,
                     symbolName: item.symbolName
                 )
                 trackContent
@@ -810,6 +900,7 @@ struct ArtistDetailView: View {
                     title: item.title,
                     subtitle: item.subtitle,
                     artworkURL: item.artworkURL,
+                    artwork: item.artwork,
                     symbolName: item.symbolName
                 )
 
@@ -901,7 +992,7 @@ struct MediaItemActionRow: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 26, alignment: .trailing)
-            ArtworkThumbnail(url: item.artworkURL, size: 48, symbolName: item.symbolName)
+            ArtworkThumbnail(url: item.artworkURL, artwork: item.artwork, size: 48, symbolName: item.symbolName)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
                     .font(.subheadline.weight(.semibold))
@@ -936,9 +1027,9 @@ struct MediaItemActionRow: View {
 
 @MainActor
 @ViewBuilder
-private func detailHeader(title: String, subtitle: String, artworkURL: URL?, symbolName: String) -> some View {
+private func detailHeader(title: String, subtitle: String, artworkURL: URL?, artwork: Artwork?, symbolName: String) -> some View {
     HStack(alignment: .top, spacing: 18) {
-        ArtworkThumbnail(url: artworkURL, size: 160, symbolName: symbolName)
+        ArtworkThumbnail(url: artworkURL, artwork: artwork, size: 160, symbolName: symbolName)
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -963,6 +1054,7 @@ struct PlayerBarView: View {
         HStack(spacing: 12) {
             ArtworkThumbnail(
                 url: model.queueSnapshot.currentArtworkURL,
+                artwork: model.queueSnapshot.currentArtwork,
                 size: 44,
                 symbolName: "music.note"
             )
@@ -1031,7 +1123,7 @@ struct QueueView: View {
 
     private var nowPlayingCard: some View {
         HStack(alignment: .top, spacing: 16) {
-            ArtworkThumbnail(url: model.queueSnapshot.currentArtworkURL, size: 120)
+            ArtworkThumbnail(url: model.queueSnapshot.currentArtworkURL, artwork: model.queueSnapshot.currentArtwork, size: 120)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Now Playing")
                     .font(.headline)
@@ -1105,7 +1197,7 @@ struct QueueView: View {
             } else {
                 ForEach(model.queueSnapshot.entries) { entry in
                     HStack(spacing: 14) {
-                        ArtworkThumbnail(url: entry.artworkURL, size: 56)
+                        ArtworkThumbnail(url: entry.artworkURL, artwork: entry.artwork, size: 56)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(entry.title)
                                 .font(.headline)
@@ -1235,7 +1327,7 @@ struct SettingsView: View {
                     .font(.headline)
             }
 
-            Text("Use the arrows to reorder and uncheck sections you do not want on the dashboard.")
+            Text("Drag a card by its handle on Home, or use the arrows here. Uncheck sections you do not want on the dashboard.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -1467,7 +1559,7 @@ struct SearchResultCard: View {
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             ZStack(alignment: .bottomLeading) {
-                ArtworkThumbnail(url: item.artworkURL, size: 220, symbolName: item.symbolName)
+                ArtworkThumbnail(url: item.artworkURL, artwork: item.artwork, size: 220, symbolName: item.symbolName)
                 LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
                     .frame(height: 96)
                     .clipped()
@@ -1523,12 +1615,17 @@ struct SearchResultCard: View {
 
 struct ArtworkThumbnail: View {
     let url: URL?
+    let artwork: Artwork?
     let size: CGFloat
     let symbolName: String
     let shape: HomeArtworkShape
 
-    init(url: URL?, size: CGFloat, symbolName: String = "music.note", shape: HomeArtworkShape = .rounded) {
+    @State private var artworkImage: NSImage?
+    @State private var artworkLoadFailed = false
+
+    init(url: URL?, artwork: Artwork? = nil, size: CGFloat, symbolName: String = "music.note", shape: HomeArtworkShape = .rounded) {
         self.url = url
+        self.artwork = artwork
         self.size = size
         self.symbolName = symbolName
         self.shape = shape
@@ -1548,22 +1645,17 @@ struct ArtworkThumbnail: View {
                     )
                 )
 
-            if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        fallbackGlyph
-                    @unknown default:
-                        fallbackGlyph
-                    }
-                }
-                .clipShape(artworkPath)
+            if let artwork {
+                ArtworkImage(artwork, width: size, height: size)
+                    .scaledToFill()
+                    .clipShape(artworkPath)
+            } else if let artworkImage {
+                Image(nsImage: artworkImage)
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(artworkPath)
+            } else if url != nil && !artworkLoadFailed {
+                ProgressView()
             } else {
                 fallbackGlyph
             }
@@ -1571,6 +1663,27 @@ struct ArtworkThumbnail: View {
         .frame(width: size, height: size)
         .clipShape(artworkPath)
         .clipped()
+        .task(id: url) {
+            await loadArtwork()
+        }
+    }
+
+    private func loadArtwork() async {
+        artworkImage = nil
+        artworkLoadFailed = false
+
+        guard let url, artwork == nil else { return }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard !Task.isCancelled else { return }
+            let image = NSImage(data: data)
+            artworkImage = image
+            artworkLoadFailed = image == nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            artworkLoadFailed = true
+        }
     }
 
     private var artworkPath: AnyShape {

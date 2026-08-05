@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import MusicKit
 
 enum MediaKind: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case song
@@ -33,6 +34,7 @@ struct MediaItemRef: Codable, Hashable, Identifiable, Sendable {
     let title: String
     let subtitle: String
     let artworkURL: URL?
+    let artwork: Artwork?
     let source: MediaSource
 
     init(
@@ -41,6 +43,7 @@ struct MediaItemRef: Codable, Hashable, Identifiable, Sendable {
         title: String,
         subtitle: String = "",
         artworkURL: URL? = nil,
+        artwork: Artwork? = nil,
         source: MediaSource
     ) {
         self.id = id
@@ -48,6 +51,7 @@ struct MediaItemRef: Codable, Hashable, Identifiable, Sendable {
         self.title = title
         self.subtitle = subtitle
         self.artworkURL = artworkURL
+        self.artwork = artwork
         self.source = source
     }
 

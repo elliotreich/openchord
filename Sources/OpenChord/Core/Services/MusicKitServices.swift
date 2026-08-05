@@ -53,6 +53,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: song.title,
                     subtitle: [song.artistName, song.albumTitle].compactMap { $0 }.joined(separator: " • "),
                     artworkURL: song.artwork?.url(width: 480, height: 480),
+                    artwork: song.artwork,
                     source: .catalog
                 )
             }
@@ -65,6 +66,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: album.title,
                     subtitle: album.artistName,
                     artworkURL: album.artwork?.url(width: 480, height: 480),
+                    artwork: album.artwork,
                     source: .catalog
                 )
             }
@@ -77,6 +79,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: playlist.name,
                     subtitle: playlist.curatorName ?? "Apple Music",
                     artworkURL: playlist.artwork?.url(width: 480, height: 480),
+                    artwork: playlist.artwork,
                     source: .catalog
                 )
             }
@@ -89,6 +92,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: artist.name,
                     subtitle: "Apple Music artist",
                     artworkURL: artist.artwork?.url(width: 480, height: 480),
+                    artwork: artist.artwork,
                     source: .catalog
                 )
             }
@@ -112,6 +116,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: song.title,
                     subtitle: song.artistName,
                     artworkURL: song.artwork?.url(width: 480, height: 480),
+                    artwork: song.artwork,
                     source: .catalog
                 )
             } ?? []
@@ -126,6 +131,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: album.title,
                     subtitle: album.artistName,
                     artworkURL: album.artwork?.url(width: 480, height: 480),
+                    artwork: album.artwork,
                     source: .catalog
                 )
             } ?? []
@@ -140,6 +146,7 @@ final class MusicKitCatalogService: CatalogService {
                     title: playlist.name,
                     subtitle: playlist.curatorName ?? "Apple Music",
                     artworkURL: playlist.artwork?.url(width: 480, height: 480),
+                    artwork: playlist.artwork,
                     source: .catalog
                 )
             } ?? []
@@ -172,6 +179,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: song.title,
                     subtitle: [song.artistName, song.albumTitle].compactMap { $0 }.joined(separator: " • "),
                     artworkURL: song.artwork?.url(width: 480, height: 480),
+                    artwork: song.artwork,
                     source: .library
                 )
             }
@@ -184,6 +192,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: album.title,
                     subtitle: album.artistName,
                     artworkURL: album.artwork?.url(width: 480, height: 480),
+                    artwork: album.artwork,
                     source: .library
                 )
             }
@@ -196,6 +205,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: playlist.name,
                     subtitle: playlist.curatorName ?? "Library",
                     artworkURL: playlist.artwork?.url(width: 480, height: 480),
+                    artwork: playlist.artwork,
                     source: .library
                 )
             }
@@ -208,6 +218,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: artist.name,
                     subtitle: "Library artist",
                     artworkURL: artist.artwork?.url(width: 480, height: 480),
+                    artwork: artist.artwork,
                     source: .library
                 )
             }
@@ -235,6 +246,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: song.title,
                     subtitle: song.artistName,
                     artworkURL: song.artwork?.url(width: 480, height: 480),
+                    artwork: song.artwork,
                     source: .library
                 )
             }
@@ -252,6 +264,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: album.title,
                     subtitle: album.artistName,
                     artworkURL: album.artwork?.url(width: 480, height: 480),
+                    artwork: album.artwork,
                     source: .library
                 )
             }
@@ -269,6 +282,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: playlist.name,
                     subtitle: playlist.curatorName ?? "Library",
                     artworkURL: playlist.artwork?.url(width: 480, height: 480),
+                    artwork: playlist.artwork,
                     source: .library
                 )
             }
@@ -286,6 +300,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: artist.name,
                     subtitle: "Library artist",
                     artworkURL: artist.artwork?.url(width: 480, height: 480),
+                    artwork: artist.artwork,
                     source: .library
                 )
             }
@@ -312,6 +327,7 @@ final class MusicKitLibraryService: LibraryService {
                     title: song.title,
                     subtitle: song.artistName,
                     artworkURL: song.artwork?.url(width: 480, height: 480),
+                    artwork: song.artwork,
                     source: .library
                 )
             }
