@@ -48,6 +48,7 @@ struct CoreModelTests {
 
         #expect(error.errorDescription?.contains("playlist reordering") == true)
         #expect(error.recoverySuggestion?.contains("Music app") == true)
+        #expect(error.userFacingMessage.contains("Music app"))
     }
 
     @Test @MainActor

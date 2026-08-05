@@ -10,6 +10,19 @@ enum AppError: Error, Codable, Equatable, LocalizedError, Sendable {
     case invalidInput(message: String)
     case unknown(message: String)
 
+    static func from(_ error: Error) -> AppError {
+        if let error = error as? AppError {
+            return error
+        }
+        return .musicKit(message: error.localizedDescription)
+    }
+
+    var userFacingMessage: String {
+        [errorDescription, recoverySuggestion]
+            .compactMap { $0 }
+            .joined(separator: " ")
+    }
+
     var errorDescription: String? {
         switch self {
         case .authorizationRequired:

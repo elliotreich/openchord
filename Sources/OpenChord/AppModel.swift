@@ -111,7 +111,7 @@ final class AppModel: ObservableObject {
             recordRecentSearch(term)
             lastErrorMessage = nil
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -136,7 +136,7 @@ final class AppModel: ObservableObject {
             recordRecentSearch(term)
             lastErrorMessage = nil
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -151,7 +151,7 @@ final class AppModel: ObservableObject {
             try await environment.playback.play(item)
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -168,7 +168,7 @@ final class AppModel: ObservableObject {
             try await environment.playback.play(track.mediaItemReference(source: source))
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -196,7 +196,7 @@ final class AppModel: ObservableObject {
             try await environment.playback.togglePlayback()
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -205,7 +205,7 @@ final class AppModel: ObservableObject {
             try await environment.playback.skipNext()
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -214,7 +214,7 @@ final class AppModel: ObservableObject {
             try await environment.playback.skipPrevious()
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -303,19 +303,24 @@ final class AppModel: ObservableObject {
             request.sort(by: \.libraryAddedDate, ascending: false)
         }
 
-        let songs = (try? await songsTask) ?? []
-        let albums = (try? await albumsTask) ?? []
-        let playlists = (try? await playlistsTask) ?? []
-        let artists = (try? await artistsTask) ?? []
+        do {
+            let songs = try await songsTask
+            let albums = try await albumsTask
+            let playlists = try await playlistsTask
+            let artists = try await artistsTask
 
-        libraryBrowse = LibraryBrowseSnapshot(
-            songs: songs.map { .song($0, source: .library) },
-            albums: albums.map { .album($0, source: .library) },
-            playlists: playlists.map { .playlist($0, source: .library) },
-            artists: artists.map { .artist($0, source: .library) },
-            downloadedOnly: downloadedOnly,
-            lastUpdated: Date()
-        )
+            libraryBrowse = LibraryBrowseSnapshot(
+                songs: songs.map { .song($0, source: .library) },
+                albums: albums.map { .album($0, source: .library) },
+                playlists: playlists.map { .playlist($0, source: .library) },
+                artists: artists.map { .artist($0, source: .library) },
+                downloadedOnly: downloadedOnly,
+                lastUpdated: Date()
+            )
+            lastErrorMessage = nil
+        } catch {
+            lastErrorMessage = AppError.from(error).userFacingMessage
+        }
     }
 
     private func queue(_ hit: SearchHit, position: MusicPlayer.Queue.EntryInsertionPosition) async {
@@ -336,7 +341,7 @@ final class AppModel: ObservableObject {
             }
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -352,7 +357,7 @@ final class AppModel: ObservableObject {
             }
             await refreshPlaybackSnapshot()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.from(error).userFacingMessage
         }
     }
 
@@ -394,7 +399,7 @@ final class AppModel: ObservableObject {
             let data = try JSONEncoder().encode(state)
             settingsStore.writeLegacyPayload(data)
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastErrorMessage = AppError.unknown(message: error.localizedDescription).userFacingMessage
         }
     }
 
