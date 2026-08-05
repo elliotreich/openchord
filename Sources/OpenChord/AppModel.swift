@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published var libraryBrowseDownloadedOnly = false
 
     private nonisolated(unsafe) let player = ApplicationMusicPlayer.shared
+    private let authorizationService = MusicKitAuthorizationService()
     private let settingsStore = SettingsStore()
 
     init() {
@@ -41,13 +42,16 @@ final class AppModel: ObservableObject {
     }
 
     func refreshAuthorization() async {
+        await authorizationService.refresh()
         authorizationStatus = MusicAuthorization.currentStatus
         guard authorizationStatus == .notDetermined else { return }
-        authorizationStatus = await MusicAuthorization.request()
+        await authorizationService.requestAuthorization()
+        authorizationStatus = MusicAuthorization.currentStatus
     }
 
     func requestAuthorization() async {
-        authorizationStatus = await MusicAuthorization.request()
+        await authorizationService.requestAuthorization()
+        authorizationStatus = MusicAuthorization.currentStatus
     }
 
     func refreshPlaybackSnapshot() async {
