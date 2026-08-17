@@ -90,6 +90,20 @@ OpenChord was built as a **clean-room implementation** — no reverse-engineered
 
 OpenChord makes no network calls beyond Apple Music and explicitly configured optional integrations. It does not use private Apple Music endpoints, scrape credentials, download audio, or include analytics by default.
 
+## Tests
+
+```bash
+swift test   # 7 tests: model round-trips, persistence, preview services, errors
+```
+
+Preview services run without a real Apple Music account — tests exercise those mocks.
+
+## Maintenance
+
+- **Settings:** versioned `UserDefaults` store (`SettingsStore.swift`) — add new fields as optional to keep backward compat.
+- **Services:** swap real `MusicKitServices` with `MockServices` via `AppEnvironment` injection for previews/tests.
+- **Signing:** update `OPENCHORD_BUNDLE_IDENTIFIER` / `OPENCHORD_SIGNING_IDENTITY` for your team; ad-hoc signing is smoke-test only.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE).
